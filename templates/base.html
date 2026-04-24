@@ -4,30 +4,45 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}{{ page_title or "CrowdWorks Bot" }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/static/app.css" />
   {% block head %}{% endblock %}
 </head>
 <body>
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
   <div class="app">
+
     <header class="app__header" role="banner">
       <div class="app__header-left">
+        <button class="app__hamburger" id="hamburger-btn" aria-label="Toggle menu" aria-expanded="false" aria-controls="main-sidebar">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <rect y="3"  width="20" height="2" rx="1" fill="currentColor"/>
+            <rect y="9"  width="20" height="2" rx="1" fill="currentColor"/>
+            <rect y="15" width="20" height="2" rx="1" fill="currentColor"/>
+          </svg>
+        </button>
         <span class="app__header-dot" aria-hidden="true">&#9679;</span>
         <span class="app__header-title">CrowdWorks Bot</span>
         <span class="app__header-badge" title="Build">v2</span>
       </div>
       <div class="app__header-right">
+        <span class="app__bot-status-badge" id="bot-status-badge" hidden></span>
         {% if auth_email %}
-        <span class="app__header-user" style="font-size:0.75rem;opacity:0.85;margin-right:8px" title="Signed in">{{ auth_email|e }}</span>
-        <a class="app__header-logout" href="/logout" style="font-size:0.75rem;margin-right:8px;color:var(--muted,#8a9199)">Sign out</a>
+        <span class="app__header-user" title="Signed in as {{ auth_email|e }}">{{ auth_email|e }}</span>
+        <a class="app__header-logout" href="/logout">Sign out</a>
         {% endif %}
-        <span class="app__header-bot-lbl" id="header-bot-lbl" title="Auto-bid &amp; Playwright: use the desktop app">—</span>
-        <button type="button" class="app__btn-start-bot" disabled
-          title="Start / Stop Bot: available in the desktop app (auto-bid uses Playwright).">&#9654; Start Bot</button>
+        <button type="button" class="app__btn-bot" id="btn-bot" data-running="false">
+          <svg class="bot-icon-play"  width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 2l7 4-7 4V2z" fill="currentColor"/></svg>
+          <svg class="bot-icon-stop"  width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style="display:none"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor"/></svg>
+          <svg class="bot-icon-spin"  width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" style="display:none"><circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="7 7" class="spin"/></svg>
+          <span class="btn-bot-label">Start Bot</span>
+        </button>
       </div>
     </header>
 
     <div class="app__body">
-      <aside class="app__sidebar" role="navigation" aria-label="Main">
+      <aside class="app__sidebar" id="main-sidebar" role="navigation" aria-label="Main navigation">
         <div class="app__sidebar-brand">
           <span class="app__sidebar-brand-cw">CW</span>
           <span class="app__sidebar-brand-txt">AutoBid</span>
@@ -35,22 +50,37 @@
         <div class="app__sidebar-hr" aria-hidden="true"></div>
         <ul class="app__nav">
           <li class="app__nav-item">
-            <a class="app__nav-link{% if current_page == 'Dashboard' %} app__nav-link--active{% endif %}" href="/dashboard">◈&nbsp;Dashboard</a>
+            <a class="app__nav-link{% if current_page == 'Dashboard' %} app__nav-link--active{% endif %}" href="/dashboard">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><rect x="1" y="1" width="5" height="5" rx="1" fill="currentColor" opacity=".8"/><rect x="9" y="1" width="5" height="5" rx="1" fill="currentColor" opacity=".8"/><rect x="1" y="9" width="5" height="5" rx="1" fill="currentColor" opacity=".8"/><rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor" opacity=".8"/></svg>
+              Dashboard
+            </a>
           </li>
           <li class="app__nav-item">
-            <a class="app__nav-link{% if current_page == 'Accounts' %} app__nav-link--active{% endif %}" href="/accounts">⊕&nbsp;Accounts</a>
+            <a class="app__nav-link{% if current_page == 'Accounts' %} app__nav-link--active{% endif %}" href="/accounts">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><circle cx="7.5" cy="4.5" r="2.5" fill="currentColor" opacity=".8"/><path d="M2 12.5c0-2.5 2.5-4 5.5-4s5.5 1.5 5.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".8"/></svg>
+              Accounts
+            </a>
           </li>
           <li class="app__nav-item">
-            <a class="app__nav-link{% if current_page == 'Jobs' %} app__nav-link--active{% endif %}" href="/jobs">▤&nbsp;Jobs</a>
+            <a class="app__nav-link{% if current_page == 'Jobs' %} app__nav-link--active{% endif %}" href="/jobs">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><rect x="1" y="2" width="13" height="2" rx="1" fill="currentColor" opacity=".8"/><rect x="1" y="6.5" width="13" height="2" rx="1" fill="currentColor" opacity=".8"/><rect x="1" y="11" width="13" height="2" rx="1" fill="currentColor" opacity=".8"/></svg>
+              Jobs
+            </a>
           </li>
           <li class="app__nav-item">
-            <a class="app__nav-link{% if current_page == 'Settings' %} app__nav-link--active{% endif %}" href="/settings">⚙&nbsp;Settings</a>
+            <a class="app__nav-link{% if current_page == 'Settings' %} app__nav-link--active{% endif %}" href="/settings">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><circle cx="7.5" cy="7.5" r="2" fill="currentColor" opacity=".8"/><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M2.93 2.93l1.41 1.41M10.66 10.66l1.41 1.41M2.93 12.07l1.41-1.41M10.66 4.34l1.41-1.41" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".8"/></svg>
+              Settings
+            </a>
           </li>
           <li class="app__nav-item">
-            <a class="app__nav-link{% if current_page == 'Log' %} app__nav-link--active{% endif %}" href="/log">☰&nbsp;Log</a>
+            <a class="app__nav-link{% if current_page == 'Log' %} app__nav-link--active{% endif %}" href="/log">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><rect x="1" y="1" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.4" opacity=".8"/><rect x="4" y="5" width="7" height="1.2" rx=".6" fill="currentColor" opacity=".8"/><rect x="4" y="7.9" width="7" height="1.2" rx=".6" fill="currentColor" opacity=".8"/><rect x="4" y="10.8" width="4" height="1.2" rx=".6" fill="currentColor" opacity=".8"/></svg>
+              Log
+            </a>
           </li>
         </ul>
-        <p class="app__sidebar-foot">Web UI — use desktop for tray &amp; background bot</p>
+        <p class="app__sidebar-foot">Web UI · desktop app for tray &amp; auto-bid bot</p>
       </aside>
 
       <main class="app__main" id="main-content">
@@ -58,17 +88,115 @@
       </main>
     </div>
 
-    <div class="app__statusbar" role="status">
-      <span class="app__status-dot" id="status-dot" aria-hidden="true">&#9679;</span>
+    <div class="app__statusbar" role="status" aria-live="polite">
+      <span class="app__status-dot" aria-hidden="true">&#9679;</span>
       <span id="status-text">{{ status_message or "Ready." }}</span>
     </div>
   </div>
+
   {% block scripts %}{% endblock %}
   <script>
-    (function() {
-      var d = document.getElementById("header-bot-lbl");
-      if (d) d.textContent = "Web UI";
-    })();
+  (function () {
+    /* ── Mobile sidebar ── */
+    var sidebar   = document.getElementById("main-sidebar");
+    var overlay   = document.getElementById("sidebar-overlay");
+    var hamburger = document.getElementById("hamburger-btn");
+
+    function openNav() {
+      sidebar.classList.add("is-open");
+      overlay.classList.add("is-open");
+      overlay.removeAttribute("aria-hidden");
+      hamburger.setAttribute("aria-expanded", "true");
+      document.body.style.overflow = "hidden";
+    }
+    function closeNav() {
+      sidebar.classList.remove("is-open");
+      overlay.classList.remove("is-open");
+      overlay.setAttribute("aria-hidden", "true");
+      hamburger.setAttribute("aria-expanded", "false");
+      document.body.style.overflow = "";
+    }
+    if (hamburger) hamburger.addEventListener("click", function () {
+      sidebar.classList.contains("is-open") ? closeNav() : openNav();
+    });
+    if (overlay) overlay.addEventListener("click", closeNav);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeNav(); });
+
+    /* ── Bot Start / Stop ── */
+    var btnBot    = document.getElementById("btn-bot");
+    var statusTxt = document.getElementById("status-text");
+    var badge     = document.getElementById("bot-status-badge");
+    var transitioning = false;
+
+    function applyBotState(data) {
+      if (!btnBot) return;
+      var running   = data.running;
+      var status    = data.status || (running ? "Running" : "Stopped");
+      var stopping  = status === "Stopping…";
+      var starting  = status === "Starting…";
+      var busy      = stopping || starting;
+
+      btnBot.setAttribute("data-running", running ? "true" : "false");
+      btnBot.querySelector(".btn-bot-label").textContent = stopping ? "Stopping…" : (running ? "Stop Bot" : "Start Bot");
+      btnBot.disabled = busy;
+
+      btnBot.querySelector(".bot-icon-play").style.display = (!running && !busy) ? "" : "none";
+      btnBot.querySelector(".bot-icon-stop").style.display = (running && !busy)  ? "" : "none";
+      btnBot.querySelector(".bot-icon-spin").style.display = busy                ? "" : "none";
+
+      /* status bar */
+      if (statusTxt) {
+        if (running) {
+          var parts = [status];
+          if (data.processed) parts.push(data.processed + " bids");
+          if (data.last_scrape_at) parts.push("last scrape " + data.last_scrape_at);
+          statusTxt.textContent = parts.join(" · ");
+        } else {
+          statusTxt.textContent = "Ready.";
+        }
+      }
+
+      /* badge in header */
+      if (badge) {
+        if (running) {
+          badge.textContent = status;
+          badge.hidden = false;
+          badge.className = "app__bot-status-badge app__bot-status-badge--" + (busy ? "busy" : "running");
+        } else {
+          badge.hidden = true;
+        }
+      }
+    }
+
+    function pollBotStatus() {
+      fetch("/api/bot/status")
+        .then(function(r) { return r.json(); })
+        .then(function(d) { applyBotState(d); })
+        .catch(function() {});
+    }
+
+    if (btnBot) {
+      btnBot.addEventListener("click", function () {
+        if (transitioning) return;
+        transitioning = true;
+        var isRunning = btnBot.getAttribute("data-running") === "true";
+        var url = isRunning ? "/api/bot/stop" : "/api/bot/start";
+        fetch(url, { method: "POST", headers: { "Content-Type": "application/json" } })
+          .then(function(r) { return r.json(); })
+          .then(function(d) { applyBotState(d); })
+          .catch(function() {})
+          .finally(function() { transitioning = false; });
+      });
+
+      /* Poll immediately then every 6 s */
+      pollBotStatus();
+      setInterval(pollBotStatus, 6000);
+    }
+  })();
   </script>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { transform-origin: center; animation: spin 1s linear infinite; }
+  </style>
 </body>
 </html>

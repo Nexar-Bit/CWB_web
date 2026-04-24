@@ -8,11 +8,13 @@ Run: uvicorn app:app --reload --host 127.0.0.1 --port 8000
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import secrets
 import threading
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from dataclasses import dataclass, field as _dc_field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -1142,6 +1144,191 @@ def submit_bid_api(request: Request, job_id: int, body: SubmitBidBody) -> JSONRe
                 account_id=body.account_id,
             )
     return JSONResponse({"ok": True, "url": bid_url})
+
+
+# ── Bot (per-user background loop) ───────────────────────────────────────────
+
+@dataclass
+class _BotRun:
+    running: bool = False
+    thread: threading.Thread | None = None
+    processed: int = 0
+    status: str = "Stopped"
+    last_scrape_at: str = ""
+    stop_event: threading.Event = _dc_field(default_factory=threading.Event)
+
+
+_bot_runs: dict[int, _BotRun] = {}
+_bot_lock = threading.Lock()
+
+
+def _get_or_create_run(user_id: int) -> _BotRun:
+    if user_id not in _bot_runs:
+        _bot_runs[user_id] = _BotRun()
+    return _bot_runs[user_id]
+
+
+def _bot_loop(user_id: int, run: _BotRun) -> None:
+    run.status = "Starting…"
+    db.add_log(user_id, "Bot started (web).", level="info")
+
+    while not run.stop_event.is_set():
+        try:
+            # Read live settings each iteration
+            interval    = max(10,  int(db.get_setting(user_id, "scrape_interval", "30")))
+            delay       = max(0.0, float(db.get_setting(user_id, "feed_delay", "1.0")))
+            max_bids    = max(1,   int(db.get_setting(user_id, "max_parallel_bids", "10")))
+            bid_max_age = max(1,   int(db.get_setting(user_id, "bid_max_age_hours", "48")))
+            model       = db.get_setting(user_id, "openai_model", "gpt-4o-mini") or "gpt-4o-mini"
+            openai_key  = (db.get_setting(user_id, "openai_api_key") or "").strip() \
+                          or (os.environ.get("OPENAI_API_KEY") or "").strip()
+
+            # ── Scrape ────────────────────────────────────────────────────
+            run.status = "Scraping jobs…"
+            with _scrape_lock:
+                try:
+                    jobs, _  = scrape_new_postings_feeds(delay_s=delay, timeout=120.0, include_raw=False)
+                    write_jsonl(str(DATA_FILE), jobs)
+                    run.last_scrape_at = datetime.now().strftime("%H:%M:%S")
+                    db.add_log(user_id, f"Bot: scraped {len(jobs)} jobs.", level="info")
+                except Exception as exc:
+                    db.add_log(user_id, f"Bot scrape error: {exc}", level="error")
+                    run.status = f"Scrape error — retry in {interval}s"
+                    run.stop_event.wait(interval)
+                    continue
+
+            if run.stop_event.is_set():
+                break
+
+            if not openai_key:
+                db.add_log(user_id, "Bot: OpenAI key not set — skipping bids.", level="warning")
+                run.status = f"No API key — waiting {interval}s"
+                run.stop_event.wait(interval)
+                continue
+
+            # ── Auto-bid for each enabled account ─────────────────────────
+            accounts = [a for a in db.list_accounts(user_id) if a["enabled"]]
+            cutoff   = datetime.now(tz=timezone.utc) - timedelta(hours=bid_max_age)
+
+            def _bid_account(acc: dict) -> int:
+                """Returns count of bids submitted for this account in this cycle."""
+                sid = (acc.get("session_id") or "").strip()
+                if not sid:
+                    return 0
+                count = 0
+                extra_prompt = (acc.get("prompt_content") or "").strip()
+                for job in jobs:
+                    if run.stop_event.is_set():
+                        break
+                    jid = str(job.get("job_offer_id") or "")
+                    if not jid:
+                        continue
+                    # Age filter
+                    try:
+                        rel = job.get("last_released_at") or ""
+                        if rel:
+                            jdt = datetime.fromisoformat(rel.replace("Z", "+00:00"))
+                            if jdt.tzinfo is None:
+                                jdt = jdt.replace(tzinfo=timezone.utc)
+                            if jdt < cutoff:
+                                continue
+                    except Exception:
+                        pass
+                    if db.has_bid(user_id, acc["id"], jid):
+                        continue
+                    # Generate proposal
+                    try:
+                        text = proposal_draft.generate_proposal_draft(
+                            job, openai_key, model=model,
+                            fetch_full_description=True, extra_prompt=extra_prompt,
+                        )
+                    except Exception as exc:
+                        db.record_bid(user_id, jid, account_id=acc["id"],
+                                      status="failed", error_msg=str(exc)[:300])
+                        db.add_log(user_id, f"Bot: proposal error job {jid}: {exc}",
+                                   level="error", account_id=acc["id"])
+                        continue
+                    # Submit bid
+                    try:
+                        sess = cword_auth.session_from_cookie(sid)
+                        url  = cword_auth.submit_bid(sess, int(jid), text)
+                        db.record_bid(user_id, jid,
+                                      job_title=(job.get("title") or "")[:200],
+                                      result_url=str(url or ""),
+                                      account_id=acc["id"], status="success")
+                        db.add_log(user_id, f"Bot: bid submitted job {jid}.",
+                                   level="success", account_id=acc["id"])
+                        count += 1
+                    except Exception as exc:
+                        msg  = str(exc)
+                        stat = "already_bid" if "already" in msg.lower() else "failed"
+                        db.record_bid(user_id, jid, account_id=acc["id"],
+                                      status=stat, error_msg=msg[:300])
+                        lv   = "info" if stat == "already_bid" else "error"
+                        db.add_log(user_id, f"Bot: submit error job {jid}: {msg}",
+                                   level=lv, account_id=acc["id"])
+                return count
+
+            if accounts:
+                run.status = f"Bidding ({len(accounts)} accounts)…"
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_bids, len(accounts))) as pool:
+                    results = list(pool.map(_bid_account, accounts))
+                cycle_bids = sum(results)
+                run.processed += cycle_bids
+                if cycle_bids:
+                    db.add_log(user_id, f"Bot: {cycle_bids} bid(s) submitted this cycle.", level="info")
+
+            run.status = f"Waiting {interval}s… ({run.processed} bids total)"
+            run.stop_event.wait(interval)
+
+        except Exception as exc:
+            db.add_log(user_id, f"Bot loop error: {exc}", level="error")
+            run.stop_event.wait(30)
+
+    run.running = False
+    run.status  = "Stopped"
+    db.add_log(user_id, f"Bot stopped (web). {run.processed} bids submitted.", level="info")
+
+
+@app.post("/api/bot/start")
+def api_bot_start(request: Request) -> JSONResponse:
+    uid = _u(request)
+    with _bot_lock:
+        run = _get_or_create_run(uid)
+        if run.running:
+            return JSONResponse({"ok": True, "running": True, "status": run.status, "already": True})
+        run.stop_event.clear()
+        run.running   = True
+        run.processed = 0
+        run.status    = "Starting…"
+        t = threading.Thread(target=_bot_loop, args=(uid, run), daemon=True, name=f"bot-u{uid}")
+        run.thread = t
+        t.start()
+    return JSONResponse({"ok": True, "running": True, "status": "Starting…"})
+
+
+@app.post("/api/bot/stop")
+def api_bot_stop(request: Request) -> JSONResponse:
+    uid = _u(request)
+    with _bot_lock:
+        run = _bot_runs.get(uid)
+        if not run or not run.running:
+            return JSONResponse({"ok": True, "running": False, "status": "Stopped"})
+        run.stop_event.set()
+        run.status = "Stopping…"
+    return JSONResponse({"ok": True, "running": True, "status": "Stopping…"})
+
+
+@app.get("/api/bot/status")
+def api_bot_status(request: Request) -> JSONResponse:
+    uid = _u(request)
+    run = _bot_runs.get(uid)
+    return JSONResponse({
+        "running":        run.running        if run else False,
+        "status":         run.status         if run else "Stopped",
+        "processed":      run.processed      if run else 0,
+        "last_scrape_at": run.last_scrape_at if run else "",
+    })
 
 
 @app.get("/health")

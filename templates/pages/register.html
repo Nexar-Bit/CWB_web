@@ -4,36 +4,51 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Create account — CrowdWorks Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="/static/app.css" />
-  <style>
-    .auth {
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      padding: 2rem; background: var(--bg, #0f1115);
-    }
-    .auth__box { width: 100%; max-width: 22rem; }
-    .auth__foot { margin-top: 1rem; font-size: 0.8rem; color: var(--muted, #8a9199); }
-    .auth__foot a { color: var(--accent, #6db3f2); }
-  </style>
 </head>
 <body>
   <div class="auth">
     <div class="auth__box">
-      <h1 style="margin:0 0 1rem; font-size:1.25rem">Create account</h1>
-      {% if error %}
-      <p class="banner banner--err" role="alert">{{ error }}</p>
-      {% endif %}
-      <form class="card" method="post" action="/register" style="padding: 16px;">
-        <div class="fgrid">
-          <span class="field__label">Email</span>
-          <div class="field"><input class="input" name="email" type="email" autocomplete="email" required /></div>
-          <span class="field__label">Password (min 8)</span>
-          <div class="field"><input class="input" name="password" type="password" autocomplete="new-password" required minlength="8" /></div>
-          <span class="field__label">Confirm</span>
-          <div class="field"><input class="input" name="password2" type="password" autocomplete="new-password" required minlength="8" /></div>
+      <div class="auth__logo">
+        <span class="auth__logo-cw">CW AutoBid</span>
+        <span class="auth__logo-sub">CrowdWorks Bot · Web UI</span>
+      </div>
+
+      <div class="auth__card">
+        <h1 class="auth__title">Create your account</h1>
+
+        {% if error %}
+        <div class="banner banner--err" role="alert" style="margin-bottom:16px">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.5M8 10.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          {{ error }}
         </div>
-        <p style="margin-top:12px"><button class="btn btn--primary" type="submit">Register</button></p>
-      </form>
-      <p class="auth__foot"><a href="/login">Back to sign in</a></p>
+        {% endif %}
+
+        <form method="post" action="/register" class="auth__fgrid">
+          <div class="field">
+            <label class="field__label" for="reg-email">Email address</label>
+            <input class="input" id="reg-email" name="email" type="email"
+              autocomplete="email" required autofocus placeholder="you@example.com" />
+          </div>
+          <div class="field">
+            <label class="field__label" for="reg-pass">Password <span style="font-weight:400;text-transform:none">(min 8 characters)</span></label>
+            <input class="input" id="reg-pass" name="password" type="password"
+              autocomplete="new-password" required minlength="8" placeholder="••••••••" />
+          </div>
+          <div class="field">
+            <label class="field__label" for="reg-pass2">Confirm password</label>
+            <input class="input" id="reg-pass2" name="password2" type="password"
+              autocomplete="new-password" required minlength="8" placeholder="••••••••" />
+          </div>
+          <button class="btn btn--primary auth__submit" type="submit">Create account</button>
+        </form>
+      </div>
+
+      <p class="auth__foot">
+        Already have an account?&nbsp;<a href="/login">Sign in</a>
+      </p>
     </div>
   </div>
 </body>
