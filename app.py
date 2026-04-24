@@ -2,9 +2,11 @@
 CrowdWorks scraped jobs: small web UI (FastAPI + Jinja2).
 
 Run (local): uvicorn app:app --reload --host 127.0.0.1 --port 8000
+  Or: python app.py  (listens on PORT env or 8000; for Render, set start command to python app.py)
 
 Run (public host): set CWORD_WEB_TOKEN to a long random string, then e.g.:
   uvicorn app:app --host 0.0.0.0 --port 8000 --proxy-headers
+  (Render: PORT is set automatically; use python app.py or uvicorn with $PORT)
 Put HTTPS and rate limits in a reverse proxy (Caddy, nginx) or a PaaS.
 
 When CWORD_WEB_TOKEN is set, every route except GET /health and /auth/login requires
@@ -375,3 +377,16 @@ if WEB_TOKEN:
             )
 
     app.add_middleware(_CwordWebAccessMiddleware)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    _port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=_port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )
