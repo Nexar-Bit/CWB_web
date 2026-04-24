@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in — CrowdWorks Bot</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    .auth {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 2rem; background: var(--bg, #0f1115);
+    }
+    .auth__box { width: 100%; max-width: 22rem; }
+    .auth__foot { margin-top: 1rem; font-size: 0.8rem; color: var(--muted, #8a9199); }
+    .auth__foot a { color: var(--accent, #6db3f2); }
+  </style>
+</head>
+<body>
+  <div class="auth">
+    <div class="auth__box">
+      <h1 style="margin:0 0 1rem; font-size:1.25rem">Sign in</h1>
+      {% if error %}
+      <p class="banner banner--err" role="alert">{{ error }}</p>
+      {% endif %}
+      <form class="card" method="post" action="/login" style="padding: 16px;">
+        <input type="hidden" name="next" value="{{ next_url|e }}" />
+        <div class="fgrid">
+          <span class="field__label">Email</span>
+          <div class="field"><input class="input" name="email" type="email" autocomplete="username" required /></div>
+          <span class="field__label">Password</span>
+          <div class="field"><input class="input" name="password" type="password" autocomplete="current-password" required /></div>
+        </div>
+        <p style="margin-top:12px"><button class="btn btn--primary" type="submit">Sign in</button></p>
+      </form>
+      <p class="auth__foot">No account? <a href="/register">Create one</a>{% if web_token_help %} · <a href="/auth/token">Instance access (token)</a>{% endif %}</p>
+    </div>
+  </div>
+</body>
+</html>

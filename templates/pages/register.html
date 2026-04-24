@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create account — CrowdWorks Bot</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    .auth {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 2rem; background: var(--bg, #0f1115);
+    }
+    .auth__box { width: 100%; max-width: 22rem; }
+    .auth__foot { margin-top: 1rem; font-size: 0.8rem; color: var(--muted, #8a9199); }
+    .auth__foot a { color: var(--accent, #6db3f2); }
+  </style>
+</head>
+<body>
+  <div class="auth">
+    <div class="auth__box">
+      <h1 style="margin:0 0 1rem; font-size:1.25rem">Create account</h1>
+      {% if error %}
+      <p class="banner banner--err" role="alert">{{ error }}</p>
+      {% endif %}
+      <form class="card" method="post" action="/register" style="padding: 16px;">
+        <div class="fgrid">
+          <span class="field__label">Email</span>
+          <div class="field"><input class="input" name="email" type="email" autocomplete="email" required /></div>
+          <span class="field__label">Password (min 8)</span>
+          <div class="field"><input class="input" name="password" type="password" autocomplete="new-password" required minlength="8" /></div>
+          <span class="field__label">Confirm</span>
+          <div class="field"><input class="input" name="password2" type="password" autocomplete="new-password" required minlength="8" /></div>
+        </div>
+        <p style="margin-top:12px"><button class="btn btn--primary" type="submit">Register</button></p>
+      </form>
+      <p class="auth__foot"><a href="/login">Back to sign in</a></p>
+    </div>
+  </div>
+</body>
+</html>

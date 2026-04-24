@@ -42,6 +42,7 @@ except ImportError:
 import browser_bid
 import cword_auth
 import db
+from db import DESKTOP_USER_ID as _U
 from crowdworks_jobs import (
     NEW_POSTING_FEEDS,
     append_jsonl_unique,
@@ -735,7 +736,7 @@ class CrowdWorksBot(tk.Tk):
         hsb.grid(row=1, column=0, sticky="ew")
 
     def _refresh_dashboard(self) -> None:
-        accounts = db.list_accounts()
+        accounts = db.list_accounts(_U)
         active = sum(1 for a in accounts if a["enabled"])
         total_jobs = len(load_jobs_jsonl(DATA_FILE)) if DATA_FILE.exists() else 0
 
@@ -744,7 +745,7 @@ class CrowdWorksBot(tk.Tk):
         self._stat_vars["bids_session"].set(str(self._bot_processed))
         self._stat_vars["bot_status"].set("Running" if self._bot_running else "Stopped")
 
-        logs = db.list_logs(limit=20)
+        logs = db.list_logs(_U,limit=20)
         self._dash_tree.delete(*self._dash_tree.get_children())
         for entry in logs:
             ts = (entry.get("created_at") or "")[:16]
@@ -813,7 +814,7 @@ class CrowdWorksBot(tk.Tk):
 
     def _refresh_accounts(self) -> None:
         self._acc_tree.delete(*self._acc_tree.get_children())
-        for acc in db.list_accounts():
+        for acc in db.list_accounts(_U):
             status  = acc.get("status") or "unverified"
             enabled = "Yes" if acc["enabled"] else "No"
             tag     = status if acc["enabled"] else "disabled"
@@ -826,7 +827,7 @@ class CrowdWorksBot(tk.Tk):
                     acc.get("prompt_name") or "— (none)",
                     status.capitalize(),
                     enabled,
-                    db.count_bids(acc["id"]),
+                    db.count_bids(_U,acc["id"]),
                     lv,
                 ),
                 tags=(tag,),
@@ -841,7 +842,7 @@ class CrowdWorksBot(tk.Tk):
         if edit and acc_id is None:
             messagebox.showinfo("Edit Account", "Select an account first.")
             return
-        acc = db.get_account(acc_id) if acc_id else None
+        acc = db.get_account(_U,acc_id) if acc_id else None
 
         win = tk.Toplevel(self)
         win.title("Edit Account" if edit else "Add Account")
@@ -872,7 +873,7 @@ class CrowdWorksBot(tk.Tk):
 
         # Prompt
         ttk.Label(f, text="Prompt").grid(row=2, column=0, sticky=W, pady=7)
-        prompts = db.list_prompts()
+        prompts = db.list_prompts(_U)
         prompt_opts = ["(none)"] + [f"[{p['id']}] {p['name']}" for p in prompts]
         prompt_var = tk.StringVar(value="(none)")
         if acc and acc.get("prompt_id"):
@@ -935,15 +936,15 @@ class CrowdWorksBot(tk.Tk):
                     pass
             enabled = int(enabled_var.get())
             if acc_id:
-                db.update_account(acc_id,
+                db.update_account(_U,acc_id,
                                   name=name or f"Account {acc_id}",
                                   session_id=sid,
                                   prompt_id=pid,
                                   enabled=enabled)
             else:
-                new_id = db.add_account(name or "New Account", sid,
+                new_id = db.add_account(_U,name or "New Account", sid,
                                         prompt_id=pid, enabled=enabled)
-                db.add_log(f"Account '{name or 'New Account'}' added.", level="info",
+                db.add_log(_U,f"Account '{name or 'New Account'}' added.", level="info",
                            account_id=new_id)
             win.destroy()
             self._refresh_accounts()
@@ -959,7 +960,7 @@ class CrowdWorksBot(tk.Tk):
         if acc_id is None:
             messagebox.showinfo("Verify", "Select an account first.")
             return
-        acc = db.get_account(acc_id)
+        acc = db.get_account(_U,acc_id)
         if not acc:
             return
         self._status_var.set(f"Verifying session for '{acc['name']}'…")
@@ -969,14 +970,14 @@ class CrowdWorksBot(tk.Tk):
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             if result.get("ok"):
                 uname = result.get("username", "")
-                db.update_account(acc_id, status="active",
+                db.update_account(_U,acc_id, status="active",
                                   cw_username=uname, last_verified=now)
-                db.add_log(f"Session verified for '{acc['name']}' ({uname})",
+                db.add_log(_U,f"Session verified for '{acc['name']}' ({uname})",
                            level="success", account_id=acc_id)
                 self._ui(lambda: self._status_var.set(f"Session active — {uname}"))
             else:
-                db.update_account(acc_id, status="expired", last_verified=now)
-                db.add_log(f"Session expired for '{acc['name']}': {result.get('error')}",
+                db.update_account(_U,acc_id, status="expired", last_verified=now)
+                db.add_log(_U,f"Session expired for '{acc['name']}': {result.get('error')}",
                            level="error", account_id=acc_id)
                 self._ui(lambda: self._status_var.set("Session expired."))
             self._ui(self._refresh_accounts)
@@ -988,7 +989,7 @@ class CrowdWorksBot(tk.Tk):
         if acc_id is None:
             messagebox.showinfo("Delete", "Select an account first.")
             return
-        acc = db.get_account(acc_id)
+        acc = db.get_account(_U,acc_id)
         if not acc:
             return
         if not messagebox.askyesno(
@@ -996,7 +997,7 @@ class CrowdWorksBot(tk.Tk):
             f"Delete '{acc['name']}'?\nAll bid records for this account will also be removed.",
         ):
             return
-        db.delete_account(acc_id)
+        db.delete_account(_U,acc_id)
         self._refresh_accounts()
 
     def _toggle_account_enabled(self) -> None:
@@ -1004,10 +1005,10 @@ class CrowdWorksBot(tk.Tk):
         if acc_id is None:
             messagebox.showinfo("Enable/Disable", "Select an account first.")
             return
-        acc = db.get_account(acc_id)
+        acc = db.get_account(_U,acc_id)
         if not acc:
             return
-        db.update_account(acc_id, enabled=0 if acc["enabled"] else 1)
+        db.update_account(_U,acc_id, enabled=0 if acc["enabled"] else 1)
         self._refresh_accounts()
 
     # ──────────────────────────────────────────────────────────────────
@@ -1152,7 +1153,7 @@ class CrowdWorksBot(tk.Tk):
 
     def _refresh_jobs(self) -> None:
         self.jobs = load_jobs_jsonl(DATA_FILE) if DATA_FILE.exists() else []
-        accounts = db.list_accounts()
+        accounts = db.list_accounts(_U)
         acc_opts = ["All accounts"] + [f"[{a['id']}] {a['name']}" for a in accounts]
         self._job_acc_cb["values"] = acc_opts
         if self._job_acc_var.get() not in acc_opts:
@@ -1170,8 +1171,8 @@ class CrowdWorksBot(tk.Tk):
 
     def _apply_job_filters(self) -> None:
         acc_id       = self._resolve_job_acc_id()
-        bid_statuses = db.get_bid_statuses(acc_id)   # {job_id: 'success'|'failed'}
-        bid_errors   = db.get_bid_errors(acc_id)     # {job_id: error_msg}
+        bid_statuses = db.get_bid_statuses(_U,acc_id)   # {job_id: 'success'|'failed'}
+        bid_errors   = db.get_bid_errors(_U,acc_id)     # {job_id: error_msg}
 
         slug_filter: str | None = None
         cat_val = self._job_cat_var.get()
@@ -1186,7 +1187,7 @@ class CrowdWorksBot(tk.Tk):
 
         # Resolve account display name once
         if acc_id is not None:
-            acc = db.get_account(acc_id)
+            acc = db.get_account(_U,acc_id)
             acc_col = acc["name"] if acc else "—"
         else:
             acc_col = "—"
@@ -1290,9 +1291,9 @@ class CrowdWorksBot(tk.Tk):
         if not jid:
             return
         if mark:
-            db.record_bid(jid, job_title=job.get("title") or "", status="success")
+            db.record_bid(_U,jid, job_title=job.get("title") or "", status="success")
         else:
-            db.delete_bid(None, jid)
+            db.delete_bid(_U,None, jid)
         self._apply_job_filters()
 
     def _retry_selected_bid(self) -> None:
@@ -1334,7 +1335,7 @@ class CrowdWorksBot(tk.Tk):
 
         # ── Determine which accounts to retry for ─────────────────────────────
         acc_id   = self._resolve_job_acc_id()
-        accounts = db.list_accounts()
+        accounts = db.list_accounts(_U)
 
         if acc_id is not None:
             # Specific account selected in the filter dropdown
@@ -1344,7 +1345,7 @@ class CrowdWorksBot(tk.Tk):
             retry_accounts = [
                 a for a in accounts
                 if a["enabled"]
-                and db.get_bid_statuses(a["id"]).get(jid) == "failed"
+                and db.get_bid_statuses(_U,a["id"]).get(jid) == "failed"
             ]
             if not retry_accounts:
                 # Fallback: all enabled accounts (no prior bid record found)
@@ -1354,7 +1355,7 @@ class CrowdWorksBot(tk.Tk):
             messagebox.showinfo("Retry", "No enabled accounts found to retry with.")
             return
 
-        openai_key = db.get_setting("openai_api_key")
+        openai_key = db.get_setting(_U,"openai_api_key")
         if not openai_key:
             messagebox.showerror(
                 "Retry",
@@ -1366,9 +1367,9 @@ class CrowdWorksBot(tk.Tk):
 
         # ── Clear failed records so the worker doesn't skip this job ──────────
         for acc in retry_accounts:
-            db.delete_bid(acc["id"], jid)
+            db.delete_bid(_U,acc["id"], jid)
 
-        db.add_log(
+        db.add_log(_U,
             f"Manual retry requested for job {jid}: {title} "
             f"({len(retry_accounts)} account(s)).",
             level="info",
@@ -1396,7 +1397,7 @@ class CrowdWorksBot(tk.Tk):
                     try:
                         self._process_job_for_account(_job, _acc, _key)
                     except Exception as exc:
-                        db.add_log(
+                        db.add_log(_U,
                             f"[{_acc['name']}] Retry error for job {_jid}: {exc}",
                             level="error",
                             account_id=_acc["id"],
@@ -1463,7 +1464,7 @@ class CrowdWorksBot(tk.Tk):
 
         _lbl(gf, "OpenAI API Key", bg=_C["card_bg"]).grid(
             row=0, column=0, sticky=W, pady=7)
-        self._sett_oai_var = tk.StringVar(value=db.get_setting("openai_api_key"))
+        self._sett_oai_var = tk.StringVar(value=db.get_setting(_U,"openai_api_key"))
         oai_entry = tk.Entry(gf, textvariable=self._sett_oai_var,
                              show="*", font=_FT_BODY)
         oai_entry.grid(row=0, column=1, padx=8, sticky="ew")
@@ -1475,7 +1476,7 @@ class CrowdWorksBot(tk.Tk):
         _lbl(gf, "Scrape Interval (s, min 10)", bg=_C["card_bg"]).grid(
             row=1, column=0, sticky=W, pady=7)
         self._sett_interval_var = tk.StringVar(
-            value=db.get_setting("scrape_interval", "30"))
+            value=db.get_setting(_U,"scrape_interval", "30"))
         ttk.Spinbox(gf, from_=10, to=3600, increment=10,
                     textvariable=self._sett_interval_var, width=10).grid(
             row=1, column=1, padx=8, sticky=W)
@@ -1483,7 +1484,7 @@ class CrowdWorksBot(tk.Tk):
         _lbl(gf, "Delay between feeds (s)", bg=_C["card_bg"]).grid(
             row=2, column=0, sticky=W, pady=7)
         self._sett_delay_var = tk.StringVar(
-            value=db.get_setting("feed_delay", "1.0"))
+            value=db.get_setting(_U,"feed_delay", "1.0"))
         ttk.Spinbox(gf, from_=0, to=10, increment=0.5,
                     textvariable=self._sett_delay_var, width=10).grid(
             row=2, column=1, padx=8, sticky=W)
@@ -1491,7 +1492,7 @@ class CrowdWorksBot(tk.Tk):
         _lbl(gf, "Max pages per feed (≥1)", bg=_C["card_bg"]).grid(
             row=3, column=0, sticky=W, pady=7)
         self._sett_max_pages_var = tk.StringVar(
-            value=db.get_setting("max_scrape_pages", "3"))
+            value=db.get_setting(_U,"max_scrape_pages", "3"))
         ttk.Spinbox(gf, from_=1, to=20, increment=1,
                     textvariable=self._sett_max_pages_var, width=10).grid(
             row=3, column=1, padx=8, sticky=W)
@@ -1502,7 +1503,7 @@ class CrowdWorksBot(tk.Tk):
         _lbl(gf, "Max parallel bids (≥1)", bg=_C["card_bg"]).grid(
             row=4, column=0, sticky=W, pady=7)
         self._sett_max_bids_var = tk.StringVar(
-            value=db.get_setting("max_parallel_bids", "10"))
+            value=db.get_setting(_U,"max_parallel_bids", "10"))
         ttk.Spinbox(gf, from_=1, to=50, increment=1,
                     textvariable=self._sett_max_bids_var, width=10).grid(
             row=4, column=1, padx=8, sticky=W)
@@ -1513,7 +1514,7 @@ class CrowdWorksBot(tk.Tk):
         _lbl(gf, "Bid Age Limit (hours)", bg=_C["card_bg"]).grid(
             row=5, column=0, sticky=W, pady=7)
         self._sett_bid_max_age_var = tk.StringVar(
-            value=db.get_setting("bid_max_age_hours", "48"))
+            value=db.get_setting(_U,"bid_max_age_hours", "48"))
         ttk.Spinbox(gf, from_=1, to=720, increment=1,
                     textvariable=self._sett_bid_max_age_var, width=10).grid(
             row=5, column=1, padx=8, sticky=W)
@@ -1522,7 +1523,7 @@ class CrowdWorksBot(tk.Tk):
             row=5, column=2, padx=(6, 0), sticky=W)
 
         self._sett_show_browser_var = tk.BooleanVar(
-            value=db.get_setting("show_browser", "1") == "1")
+            value=db.get_setting(_U,"show_browser", "1") == "1")
         ttk.Checkbutton(
             gf,
             text="Show browser for monitoring  (uncheck to run headlessly in background)",
@@ -1535,7 +1536,7 @@ class CrowdWorksBot(tk.Tk):
         _pct_frame.grid(row=7, column=1, columnspan=2, sticky="ew", padx=8, pady=4)
         _pct_frame.columnconfigure(0, weight=1)
         try:
-            _pct_init = max(0, min(100, int(db.get_setting("bid_price_pct", "0") or "0")))
+            _pct_init = max(0, min(100, int(db.get_setting(_U,"bid_price_pct", "0") or "0")))
         except ValueError:
             _pct_init = 0
         self._sett_bid_pct_var = tk.IntVar(value=_pct_init)
@@ -1563,7 +1564,7 @@ class CrowdWorksBot(tk.Tk):
             "o3-mini",
         ]
         self._sett_model_var = tk.StringVar(
-            value=db.get_setting("openai_model", "gpt-4o-mini"))
+            value=db.get_setting(_U,"openai_model", "gpt-4o-mini"))
         model_cb = ttk.Combobox(
             gf, textvariable=self._sett_model_var,
             values=_AI_MODELS, width=20,
@@ -1617,53 +1618,53 @@ class CrowdWorksBot(tk.Tk):
         phsb.grid(row=1, column=0, sticky="ew")
 
     def _refresh_settings(self) -> None:
-        self._sett_oai_var.set(db.get_setting("openai_api_key"))
-        self._sett_interval_var.set(db.get_setting("scrape_interval", "30"))
-        self._sett_delay_var.set(db.get_setting("feed_delay", "1.0"))
-        self._sett_max_pages_var.set(db.get_setting("max_scrape_pages", "3"))
-        self._sett_max_bids_var.set(db.get_setting("max_parallel_bids", "10"))
-        self._sett_bid_max_age_var.set(db.get_setting("bid_max_age_hours", "48"))
-        self._sett_show_browser_var.set(db.get_setting("show_browser", "1") == "1")
+        self._sett_oai_var.set(db.get_setting(_U,"openai_api_key"))
+        self._sett_interval_var.set(db.get_setting(_U,"scrape_interval", "30"))
+        self._sett_delay_var.set(db.get_setting(_U,"feed_delay", "1.0"))
+        self._sett_max_pages_var.set(db.get_setting(_U,"max_scrape_pages", "3"))
+        self._sett_max_bids_var.set(db.get_setting(_U,"max_parallel_bids", "10"))
+        self._sett_bid_max_age_var.set(db.get_setting(_U,"bid_max_age_hours", "48"))
+        self._sett_show_browser_var.set(db.get_setting(_U,"show_browser", "1") == "1")
         try:
             self._sett_bid_pct_var.set(
-                max(0, min(100, int(db.get_setting("bid_price_pct", "0") or "0"))))
+                max(0, min(100, int(db.get_setting(_U,"bid_price_pct", "0") or "0"))))
         except ValueError:
             self._sett_bid_pct_var.set(0)
-        self._sett_model_var.set(db.get_setting("openai_model", "gpt-4o-mini"))
+        self._sett_model_var.set(db.get_setting(_U,"openai_model", "gpt-4o-mini"))
         self._refresh_prompts()
 
     def _save_settings(self) -> None:
-        db.set_setting("openai_api_key", self._sett_oai_var.get().strip())
+        db.set_setting(_U,"openai_api_key", self._sett_oai_var.get().strip())
         try:
-            db.set_setting("scrape_interval", str(max(10, int(self._sett_interval_var.get()))))
+            db.set_setting(_U,"scrape_interval", str(max(10, int(self._sett_interval_var.get()))))
         except ValueError:
             pass
         try:
-            db.set_setting("feed_delay", str(max(0.0, float(self._sett_delay_var.get()))))
+            db.set_setting(_U,"feed_delay", str(max(0.0, float(self._sett_delay_var.get()))))
         except ValueError:
             pass
         try:
-            db.set_setting("max_scrape_pages", str(max(1, int(self._sett_max_pages_var.get()))))
+            db.set_setting(_U,"max_scrape_pages", str(max(1, int(self._sett_max_pages_var.get()))))
         except ValueError:
             pass
         try:
-            db.set_setting("max_parallel_bids", str(max(1, int(self._sett_max_bids_var.get()))))
+            db.set_setting(_U,"max_parallel_bids", str(max(1, int(self._sett_max_bids_var.get()))))
         except ValueError:
             pass
         try:
-            db.set_setting("bid_max_age_hours", str(max(1, int(self._sett_bid_max_age_var.get()))))
+            db.set_setting(_U,"bid_max_age_hours", str(max(1, int(self._sett_bid_max_age_var.get()))))
         except ValueError:
             pass
-        db.set_setting("show_browser", "1" if self._sett_show_browser_var.get() else "0")
-        db.set_setting("bid_price_pct", str(max(0, min(100, self._sett_bid_pct_var.get()))))
+        db.set_setting(_U,"show_browser", "1" if self._sett_show_browser_var.get() else "0")
+        db.set_setting(_U,"bid_price_pct", str(max(0, min(100, self._sett_bid_pct_var.get()))))
         model_val = self._sett_model_var.get().strip()
         if model_val:
-            db.set_setting("openai_model", model_val)
+            db.set_setting(_U,"openai_model", model_val)
         self._status_var.set("Settings saved.")
 
     def _refresh_prompts(self) -> None:
         self._prompt_tree.delete(*self._prompt_tree.get_children())
-        for p in db.list_prompts():
+        for p in db.list_prompts(_U):
             preview = (p["content"] or "").replace("\n", " ")[:140]
             self._prompt_tree.insert("", END, iid=str(p["id"]),
                                      values=(p["id"], p["name"], preview))
@@ -1677,7 +1678,7 @@ class CrowdWorksBot(tk.Tk):
         if edit and pid is None:
             messagebox.showinfo("Edit Prompt", "Select a prompt first.")
             return
-        prompt = db.get_prompt(pid) if pid else None
+        prompt = db.get_prompt(_U,pid) if pid else None
 
         win = tk.Toplevel(self)
         win.title("Edit Prompt" if edit else "Add Prompt")
@@ -1711,9 +1712,9 @@ class CrowdWorksBot(tk.Tk):
                 messagebox.showerror("Prompt", "Content is required.", parent=win)
                 return
             if pid:
-                db.update_prompt(pid, name, content)
+                db.update_prompt(_U,pid, name, content)
             else:
-                db.add_prompt(name, content)
+                db.add_prompt(_U,name, content)
             win.destroy()
             self._refresh_prompts()
 
@@ -1732,7 +1733,7 @@ class CrowdWorksBot(tk.Tk):
             "Delete this prompt?\nAccounts using it will lose the assignment.",
         ):
             return
-        db.delete_prompt(pid)
+        db.delete_prompt(_U,pid)
         self._refresh_prompts()
 
     # ──────────────────────────────────────────────────────────────────
@@ -1782,7 +1783,7 @@ class CrowdWorksBot(tk.Tk):
         hsb.grid(row=1, column=0, sticky="ew")
 
     def _refresh_log(self) -> None:
-        logs = db.list_logs(limit=300)
+        logs = db.list_logs(_U,limit=300)
         self._log_tree.delete(*self._log_tree.get_children())
         for entry in logs:
             ts   = (entry.get("created_at") or "")[:19]
@@ -1797,7 +1798,7 @@ class CrowdWorksBot(tk.Tk):
     def _clear_log(self) -> None:
         if not messagebox.askyesno("Clear Logs", "Delete all log entries?"):
             return
-        db.clear_logs()
+        db.clear_logs(_U)
         self._refresh_log()
 
     # ──────────────────────────────────────────────────────────────────
@@ -1811,7 +1812,7 @@ class CrowdWorksBot(tk.Tk):
             self._start_bot()
 
     def _start_bot(self) -> None:
-        if not db.get_setting("openai_api_key"):
+        if not db.get_setting(_U,"openai_api_key"):
             messagebox.showerror(
                 "Bot",
                 "OpenAI API key is required.\n"
@@ -1819,7 +1820,7 @@ class CrowdWorksBot(tk.Tk):
             )
             return
 
-        accounts = [a for a in db.list_accounts() if a["enabled"]]
+        accounts = [a for a in db.list_accounts(_U) if a["enabled"]]
         if not accounts:
             messagebox.showerror(
                 "Bot",
@@ -1854,7 +1855,7 @@ class CrowdWorksBot(tk.Tk):
         self._bid_workers.clear()
 
         try:
-            max_workers = max(1, int(db.get_setting("max_parallel_bids", "10")))
+            max_workers = max(1, int(db.get_setting(_U,"max_parallel_bids", "10")))
         except ValueError:
             max_workers = 10
 
@@ -1865,7 +1866,7 @@ class CrowdWorksBot(tk.Tk):
         self._hdr_bot_lbl.config(text="● Running", fg=_C["green"])
         self._status_dot.config(fg=_C["green"])
         self._status_var.set("Bot started — monitoring for new CrowdWorks jobs…")
-        db.add_log("Bot started.", level="info")
+        db.add_log(_U,"Bot started.", level="info")
 
         # Start persistent worker threads — they pull from _bid_queue in priority
         # order (newest project first) until the stop event is set.
@@ -1897,7 +1898,7 @@ class CrowdWorksBot(tk.Tk):
                 break
         msg = f"Bot stopped — {self._bot_processed} proposal(s) submitted this session."
         self._status_var.set(msg)
-        db.add_log(f"Bot stopped. {self._bot_processed} bids submitted this session.",
+        db.add_log(_U,f"Bot stopped. {self._bot_processed} bids submitted this session.",
                    level="info")
 
     def _bid_worker(self) -> None:
@@ -1919,7 +1920,7 @@ class CrowdWorksBot(tk.Tk):
                 self._process_job_for_account(job, acc, openai_key)
             except Exception as exc:
                 jid = job.get("job_offer_id", "?")
-                db.add_log(
+                db.add_log(_U,
                     f"[{acc['name']}] Unexpected error in bid worker "
                     f"for job {jid}: {exc}",
                     level="error",
@@ -1937,24 +1938,24 @@ class CrowdWorksBot(tk.Tk):
         while not self._bot_stop_event.is_set():
             # ── Read settings ──────────────────────────────────────────────
             try:
-                interval = max(10, int(db.get_setting("scrape_interval", "30")))
+                interval = max(10, int(db.get_setting(_U,"scrape_interval", "30")))
             except ValueError:
                 interval = 30
             try:
-                delay = max(0.0, float(db.get_setting("feed_delay", "1.0")))
+                delay = max(0.0, float(db.get_setting(_U,"feed_delay", "1.0")))
             except ValueError:
                 delay = 1.0
             try:
-                max_pages = max(1, int(db.get_setting("max_scrape_pages", "3")))
+                max_pages = max(1, int(db.get_setting(_U,"max_scrape_pages", "3")))
             except ValueError:
                 max_pages = 3
             try:
-                max_bids = max(1, int(db.get_setting("max_parallel_bids", "10")))
+                max_bids = max(1, int(db.get_setting(_U,"max_parallel_bids", "10")))
             except ValueError:
                 max_bids = 10
 
-            openai_key = db.get_setting("openai_api_key")
-            accounts   = [a for a in db.list_accounts() if a["enabled"]]
+            openai_key = db.get_setting(_U,"openai_api_key")
+            accounts   = [a for a in db.list_accounts(_U) if a["enabled"]]
 
             # ── Scrape feeds (parallel — one thread per feed) ──────────────
             self._ui(lambda p=max_pages: self._status_var.set(
@@ -1982,7 +1983,7 @@ class CrowdWorksBot(tk.Tk):
                     # for deduplication but never badged or bid on.
                     try:
                         bid_max_age = max(
-                            1, int(db.get_setting("bid_max_age_hours", "48"))
+                            1, int(db.get_setting(_U,"bid_max_age_hours", "48"))
                         )
                     except ValueError:
                         bid_max_age = 48
@@ -2018,7 +2019,7 @@ class CrowdWorksBot(tk.Tk):
 
                         if is_recent:
                             biddable_jobs.append(job)
-                            db.add_log(
+                            db.add_log(_U,
                                 f"New project detected: [{jid}] {title}",
                                 level="info",
                             )
@@ -2028,7 +2029,7 @@ class CrowdWorksBot(tk.Tk):
                             self._ui(self.bell)
                         else:
                             skipped_old += 1
-                            db.add_log(
+                            db.add_log(_U,
                                 f"Old backlog job ignored: [{jid}] {title} "
                                 f"(posted >{bid_max_age}h ago)",
                                 level="info",
@@ -2081,7 +2082,7 @@ class CrowdWorksBot(tk.Tk):
                                 f"(newest first)…"
                             )
                         )
-                        db.add_log(
+                        db.add_log(_U,
                             f"{n_enqueued} bid task(s) enqueued "
                             f"({len(biddable_jobs)} new project(s)).",
                             level="info",
@@ -2100,7 +2101,7 @@ class CrowdWorksBot(tk.Tk):
 
             except Exception as exc:
                 err = f"Scrape error: {exc}"
-                db.add_log(err, level="error")
+                db.add_log(_U,err, level="error")
                 self._ui(lambda m=err: self._status_var.set(f"Bot: {m}"))
 
             self._bot_stop_event.wait(timeout=interval)
@@ -2114,18 +2115,18 @@ class CrowdWorksBot(tk.Tk):
         jid      = str(job.get("job_offer_id"))
         title    = (job.get("title") or "")[:80]
 
-        if db.has_bid(acc_id, jid):
+        if db.has_bid(_U,acc_id, jid):
             return
 
         prompt = acc.get("prompt_content") or ""
         if not prompt:
-            db.add_log(
+            db.add_log(_U,
                 f"[{acc_name}] No prompt assigned — skipping job {jid}.",
                 level="warning", account_id=acc_id,
             )
             return
         if not openai_key:
-            db.add_log("OpenAI key missing — cannot generate proposal.",
+            db.add_log(_U,"OpenAI key missing — cannot generate proposal.",
                        level="error", account_id=acc_id)
             return
 
@@ -2134,14 +2135,14 @@ class CrowdWorksBot(tk.Tk):
         self._ui(lambda a=acc_name, j=jid: self._status_var.set(
             f"Bot [{a}]: opening browser for job {j} (details → AI → bid)…"
         ))
-        db.add_log(
+        db.add_log(_U,
             f"[{acc_name}] Launching browser for job {jid}: {title}…",
             level="info", account_id=acc_id,
         )
 
         def _browser_event(msg: str) -> None:
             """Forward each browser log line to the DB and status bar."""
-            db.add_log(
+            db.add_log(_U,
                 f"[{acc_name}] browser: {msg}",
                 level="info", account_id=acc_id,
             )
@@ -2150,10 +2151,10 @@ class CrowdWorksBot(tk.Tk):
         # headless = True when "Show browser" is OFF (background mode).
         # Default "1" keeps the original behaviour (visible browser) when the
         # user has never explicitly saved the setting.
-        headless   = db.get_setting("show_browser", "1") != "1"
-        model_slug = db.get_setting("openai_model", "gpt-4o-mini") or "gpt-4o-mini"
+        headless   = db.get_setting(_U,"show_browser", "1") != "1"
+        model_slug = db.get_setting(_U,"openai_model", "gpt-4o-mini") or "gpt-4o-mini"
         try:
-            bid_price_pct = max(0, min(100, int(db.get_setting("bid_price_pct", "0") or "0")))
+            bid_price_pct = max(0, min(100, int(db.get_setting(_U,"bid_price_pct", "0") or "0")))
         except ValueError:
             bid_price_pct = 0
         bid_result = browser_bid.submit_bid_via_browser(
@@ -2170,12 +2171,12 @@ class CrowdWorksBot(tk.Tk):
 
         if bid_result.get("ok"):
             url = bid_result.get("url", "")
-            db.record_bid(jid, job_title=title, result_url=url, account_id=acc_id)
-            db.update_account(acc_id, status="active")
+            db.record_bid(_U,jid, job_title=title, result_url=url, account_id=acc_id)
+            db.update_account(_U,acc_id, status="active")
             with self._bid_lock:
                 self._bot_processed += 1
                 n_done = self._bot_processed
-            db.add_log(
+            db.add_log(_U,
                 f"[{acc_name}] Bid submitted for job {jid}: {url}",
                 level="success", account_id=acc_id,
             )
@@ -2186,11 +2187,11 @@ class CrowdWorksBot(tk.Tk):
             # Job was already bid on (e.g. DB was deleted and bot retried).
             # Record as 'already_bid' so the bot never attempts this again.
             err = bid_result.get("error", "Already bid on this project.")
-            db.record_bid(
+            db.record_bid(_U,
                 jid, job_title=title, result_url="",
                 account_id=acc_id, status="already_bid",
             )
-            db.add_log(
+            db.add_log(_U,
                 f"[{acc_name}] Job {jid} already bid on — marked accordingly.",
                 level="info", account_id=acc_id,
             )
@@ -2199,17 +2200,17 @@ class CrowdWorksBot(tk.Tk):
             ))
         else:
             err = bid_result.get("error", "Unknown browser bid error.")
-            db.record_bid(
+            db.record_bid(_U,
                 jid, job_title=title, result_url="",
                 account_id=acc_id, status="failed", error_msg=err,
             )
-            db.add_log(
+            db.add_log(_U,
                 f"[{acc_name}] Bid failed for job {jid}: {err}",
                 level="error", account_id=acc_id,
             )
             self._ui(lambda m=err: self._status_var.set(f"Bot bid error: {m}"))
             if any(kw in err.lower() for kw in ("session", "login", "expired", "redirect")):
-                db.update_account(acc_id, status="expired")
+                db.update_account(_U,acc_id, status="expired")
 
     def _enqueue_existing_jobs(self) -> None:
         """Enqueue pre-existing JSONL jobs that are still within bid_max_age_hours
@@ -2221,12 +2222,12 @@ class CrowdWorksBot(tk.Tk):
             return
 
         try:
-            bid_max_age = max(1, int(db.get_setting("bid_max_age_hours", "48")))
+            bid_max_age = max(1, int(db.get_setting(_U,"bid_max_age_hours", "48")))
         except ValueError:
             bid_max_age = 48
 
-        openai_key = db.get_setting("openai_api_key")
-        accounts   = [a for a in db.list_accounts() if a["enabled"]]
+        openai_key = db.get_setting(_U,"openai_api_key")
+        accounts   = [a for a in db.list_accounts(_U) if a["enabled"]]
         if not accounts or not openai_key:
             return
 
@@ -2265,7 +2266,7 @@ class CrowdWorksBot(tk.Tk):
             for acc in accounts:
                 if self._bot_stop_event.is_set():
                     break
-                if db.has_bid(acc["id"], jid):
+                if db.has_bid(_U,acc["id"], jid):
                     continue
 
                 with self._bid_lock:
@@ -2277,7 +2278,7 @@ class CrowdWorksBot(tk.Tk):
                 n_enqueued += 1
 
         if n_enqueued:
-            db.add_log(
+            db.add_log(_U,
                 f"Startup: {n_enqueued} bid task(s) enqueued from existing "
                 f"eligible jobs (posted within {bid_max_age}h).",
                 level="info",

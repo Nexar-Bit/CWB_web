@@ -16,6 +16,10 @@
         <span class="app__header-badge" title="Build">v2</span>
       </div>
       <div class="app__header-right">
+        {% if auth_email %}
+        <span class="app__header-user" style="font-size:0.75rem;opacity:0.85;margin-right:8px" title="Signed in">{{ auth_email|e }}</span>
+        <a class="app__header-logout" href="/logout" style="font-size:0.75rem;margin-right:8px;color:var(--muted,#8a9199)">Sign out</a>
+        {% endif %}
         <span class="app__header-bot-lbl" id="header-bot-lbl" title="Auto-bid &amp; Playwright: use the desktop app">—</span>
         <button type="button" class="app__btn-start-bot" disabled
           title="Start / Stop Bot: available in the desktop app (auto-bid uses Playwright).">&#9654; Start Bot</button>
