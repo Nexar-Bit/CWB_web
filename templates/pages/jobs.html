@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">Jobs</h1>
+  </div>
+  <div class="page__inner">
+    {% if error %}
+    <div class="banner banner--err" role="alert">{{ error }}</div>
+    {% endif %}
+    {% if refreshed %}
+    <div class="banner banner--ok" role="status">List refreshed from CrowdWorks.</div>
+    {% endif %}
+
+    <form class="job-fbar" method="post" action="/refresh" style="align-items:flex-end; margin-bottom:4px">
+      <label class="field field--grow" style="max-width:7rem">
+        <span class="field__label">Delay (s)</span>
+        <input name="delay" type="number" class="input" step="0.5" min="0" max="30" value="{{ default_feed_delay }}" />
+      </label>
+      <button type="submit" class="btn btn--primary">Refresh from site</button>
+      <span class="muted">Last file write: <strong>{{ data_updated or "—" }}</strong> · {{ job_rows|length }} rows (before filters)</span>
+    </form>
+
+    <div class="job-fbar" role="group" aria-label="Filters">
+      <label class="field field--grow" style="min-width:8rem">
+        <span class="field__label">Account</span>
+        <select id="job-acc-filter" class="select" aria-label="Account">
+          <option value="">All accounts</option>
+          {% for a in accounts_list %}
+          <option value="{{ a.id }}" {% if acc_filter is not none and acc_filter == a.id %}selected{% endif %}>[{{ a.id }}] {{ a.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field field--grow" style="min-width:7rem">
+        <span class="field__label">Category</span>
+        <select id="feed-filter" class="select" aria-label="Project category">
+          <option value="">All</option>
+          {% for f in feeds_category_menu %}
+          <option value="{{ f.slug }}">{{ f.menu_label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field job-fbar__grow">
+        <span class="field__label">Search</span>
+        <input id="text-filter" type="search" class="input" placeholder="Title / client / ID…" autocomplete="off" />
+      </label>
+      <label class="field" style="min-width:8rem">
+        <span class="field__label">Bid Status</span>
+        <select id="bid-filter" class="select" aria-label="Bid status">
+          <option value="all">All</option>
+          <option value="none">Not bid yet</option>
+          <option value="success">Submitted</option>
+          <option value="already_bid">Already Bid</option>
+          <option value="failed">Failed</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="toolbar" role="toolbar" style="margin-bottom:10px">
+      <button type="button" class="btn" id="btn-open-job">Open in browser</button>
+      <button type="button" class="btn btn--primary" id="btn-mark-yes">Mark bid placed</button>
+      <button type="button" class="btn" id="btn-mark-no">Unmark bid</button>
+      <button type="button" class="btn" id="btn-retry">↺ Retry Failed</button>
+    </div>
+
+    <div class="card" style="padding:0" role="region" aria-label="Job listings">
+      <div class="table-wrap" style="max-height:none">
+        <table class="data-table" id="jobs-table">
+          <thead>
+            <tr>
+              <th style="width:2rem"></th>
+              <th>Account</th>
+              <th>Category</th>
+              <th>Bid Status</th>
+              <th>ID</th>
+              <th>Title</th>
+              <th></th>
+              <th>Client</th>
+              <th>Pay</th>
+              <th>Released</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in job_rows %}
+            <tr class="{{ job._row_class|e }}"
+                data-jid="{{ job.job_offer_id }}"
+                data-feed="{{ job.feed_slug|default('')|e }}"
+                data-bid-status="{{ job._bid_status|e }}"
+                data-text="{{ (job.title ~ ' ' ~ (job.client_username or ''))|lower|e }}"
+                title="{% if job._bid_error %}{{ job._bid_error|e }}{% endif %}">
+              <td class="cell-mono"><input type="radio" name="jobpick" class="job-pick" value="{{ job.job_offer_id }}" form="voidform" aria-label="Select" /></td>
+              <td>{{ job._acc_col|e }}</td>
+              <td><span class="feed-pill">{{ job._cat|e }}</span></td>
+              <td class="cell-mono">{{ job._bid_label|e }}</td>
+              <td class="cell-mono">{{ job.job_offer_id }}</td>
+              <td class="title-cell" style="max-width:320px" title="{{ job.title|e }}">{{ job.title|e }}</td>
+              <td class="cell-mono" style="white-space:nowrap; color:var(--yellow)">{{ job._badge|e }}</td>
+              <td>{{ (job.client_username or "—")|e }}</td>
+              <td class="cell-mono">{{ job._pay|e }}</td>
+              <td class="cell-mono">{{ job.last_released_at or "—" }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="10" class="muted">No rows. Use <strong>Refresh from site</strong> or the CLI scraper.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <form id="voidform" style="display:none"></form>
+      </div>
+    </div>
+
+    <p class="muted" id="job-status-hint" style="margin-top:0.5rem" aria-live="polite">Jobs: <span id="js-shown">0</span> shown</p>
+  </div>
+
+  <div id="draft-modal" class="modal" aria-hidden="true">
+    <div class="modal__backdrop" data-close-draft></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="draft-title">
+      <h2 id="draft-title" class="modal__title">応募メッセージ草案</h2>
+      <p class="muted modal__hint">生成結果は案です。必ず確認・編集してから <a class="link" id="draft-proposal-link" href="#" target="_blank" rel="noopener noreferrer">応募ページ</a> に貼り付けてください。</p>
+      <div style="padding: 0 1.25rem">
+        <label class="field">
+          <span class="field__label">Use account (session &amp; prompt, matches desktop)</span>
+          <select id="draft-account" class="select" style="width:100%; max-width:28rem">
+            <option value="">— Select account —</option>
+            {% for a in accounts_list %}
+            <option value="{{ a.id }}">[{{ a.id }}] {{ a.name }} ({{ a.status|default("unverified") }})</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <label class="field" style="padding:0 1.25rem; margin-top:0.5rem">
+        <span class="field__label">OpenAI API key (empty = server key from Settings or OPENAI_API_KEY)</span>
+        <input id="draft-api-key" type="password" class="input" style="width:100%; max-width:28rem" autocomplete="off" placeholder="sk-…" />
+      </label>
+      <label class="field field--inline" style="padding:0 1.25rem">
+        <input id="draft-fetch-full" type="checkbox" checked />
+        <span>公開案件ページから詳細を含める</span>
+      </label>
+      <label class="field" style="padding:0 1.25rem">
+        <span class="field__label">Model</span>
+        <input id="draft-model" type="text" class="input" style="width:100%; max-width:28rem" value="{{ default_model|e }}" />
+      </label>
+      <label class="field" style="padding:0 1.25rem">
+        <span class="field__label">Extra instructions (appended; account prompt is always included on server)</span>
+        <textarea id="draft-extra-prompt" class="input draft-prompt-area" rows="4" placeholder="例: 丁寧語で。単価はレンジ上限…"></textarea>
+      </label>
+      <details class="cw-creds-section" id="cw-creds-details" style="margin:8px 1.25rem">
+        <summary class="cw-creds-summary">Override session (optional)</summary>
+        <div class="cw-creds-body">
+          <input id="cw-session-id" type="text" class="input" style="width:100%; max-width:28rem" placeholder="Override _cw_session_id for check / submit" autocomplete="off" spellcheck="false" />
+          <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:8px; align-items:center">
+            <label class="field--inline" style="margin:0"><input id="cw-save-session" type="checkbox" /> <span>Save to selected account in DB</span></label>
+            <button type="button" class="btn btn--sm" id="cw-check-session">Check Session</button>
+            <span id="cw-session-status" class="muted" style="font-size:0.7rem"></span>
+          </div>
+          <label class="field" style="margin-top:8px">
+            <span class="field__label">Bid price (optional, fixed-fee projects)</span>
+            <input id="cw-bid-price" type="text" class="input" style="max-width:180px" placeholder="e.g. 50000" />
+          </label>
+        </div>
+      </details>
+      <div class="modal__actions-top">
+        <button type="button" class="btn btn--primary" id="draft-run">Generate</button>
+        <button type="button" class="btn" id="draft-submit" disabled>Auto-submit bid</button>
+        <span id="draft-status" class="muted"></span>
+      </div>
+      <div id="draft-error" class="banner banner--err" role="alert" hidden style="margin:0 1.25rem 0.5rem"></div>
+      <label class="field" style="padding:0 1.25rem">
+        <span class="field__label">Result</span>
+        <textarea id="draft-result" class="input draft-textarea" rows="12" readonly style="width:100%"></textarea>
+      </label>
+      <div class="modal__actions">
+        <button type="button" class="btn" id="draft-copy">Copy result</button>
+        <button type="button" class="btn" id="draft-close">Close</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+{% block scripts %}
+  <script>
+  (function () {
+    const feedSel = document.getElementById("feed-filter");
+    const bidSel = document.getElementById("bid-filter");
+    const accSel = document.getElementById("job-acc-filter");
+    const textInp = document.getElementById("text-filter");
+    const rows = Array.from(document.querySelectorAll("#jobs-table tbody tr.jobs-data-row"));
+
+    if (accSel) accSel.addEventListener("change", function() {
+      const u = new URL(window.location.href);
+      if (accSel.value) u.searchParams.set("acc", accSel.value); else u.searchParams.delete("acc");
+      window.location.href = u.toString();
+    });
+
+    function applyFilters() {
+      const slug = (feedSel && feedSel.value) || "";
+      const bfv = (bidSel && bidSel.value) || "all";
+      const q = ((textInp && textInp.value) || "").trim().toLowerCase();
+      let n = 0;
+      for (const tr of rows) {
+        const st = (tr.getAttribute("data-bid-status") || "").trim();
+        const okFeed = !slug || (tr.getAttribute("data-feed") || "") === slug;
+        const hay = (tr.getAttribute("data-text") || "");
+        const okText = !q || hay.includes(q);
+        let okBid = true;
+        if (bfv === "none") okBid = (st === "");
+        else if (bfv === "all") okBid = true;
+        else okBid = (st === bfv);
+        const show = okFeed && okText && okBid;
+        tr.hidden = !show;
+        if (show) n++;
+      }
+      const el = document.getElementById("js-shown");
+      if (el) el.textContent = String(n);
+    }
+    if (feedSel) feedSel.addEventListener("change", applyFilters);
+    if (bidSel) bidSel.addEventListener("change", applyFilters);
+    if (textInp) textInp.addEventListener("input", applyFilters);
+    applyFilters();
+
+    function selectedId() {
+      const r = document.querySelector("input.job-pick:checked");
+      return r ? r.value : null;
+    }
+    rows.forEach(function(tr) {
+      tr.addEventListener("dblclick", function(e) {
+        if (e.target && e.target.closest && e.target.closest("input")) return;
+        const jid = tr.getAttribute("data-jid");
+        if (jid) window.open("https://crowdworks.jp/public/jobs/" + encodeURIComponent(String(jid)), "_blank", "noopener");
+      });
+    });
+    const btnO = document.getElementById("btn-open-job");
+    if (btnO) btnO.addEventListener("click", function() {
+      const id = selectedId();
+      if (!id) { alert("Select a job row first."); return; }
+      window.open("https://crowdworks.jp/public/jobs/" + encodeURIComponent(String(id)), "_blank", "noopener");
+    });
+    const btnMy = document.getElementById("btn-mark-yes");
+    if (btnMy) btnMy.addEventListener("click", async function() {
+      const id = selectedId();
+      if (!id) { alert("Select a job row first."); return; }
+      const r = await fetch("/api/jobs/" + encodeURIComponent(id) + "/bid-mark", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mark: true, account_id: null })
+      });
+      if (!r.ok) { const t = await r.text(); alert("Failed: " + t); return; }
+      location.reload();
+    });
+    const btnMn = document.getElementById("btn-mark-no");
+    if (btnMn) btnMn.addEventListener("click", async function() {
+      const id = selectedId();
+      if (!id) { alert("Select a job row first."); return; }
+      const r = await fetch("/api/jobs/" + encodeURIComponent(id) + "/bid-mark", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mark: false, account_id: null })
+      });
+      if (!r.ok) { const t = await r.text(); alert("Failed: " + t); return; }
+      location.reload();
+    });
+    const btnR = document.getElementById("btn-retry");
+    if (btnR) btnR.addEventListener("click", async function() {
+      const id = selectedId();
+      if (!id) { alert("Select a job first."); return; }
+      const accF = (accSel && accSel.value) ? parseInt(accSel.value, 10) : null;
+      const r = await fetch("/api/jobs/" + encodeURIComponent(id) + "/retry-failed", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accF })
+      });
+      const d = await r.json().catch(function() { return {}; });
+      if (!r.ok) { alert(d.error || d.detail || ("HTTP " + r.status)); return; }
+      alert(d.message || "OK");
+      location.reload();
+    });
+
+    /* —— Draft modal —— */
+    const draftModal = document.getElementById("draft-modal");
+    const draftApiKey = document.getElementById("draft-api-key");
+    const draftFetchFull = document.getElementById("draft-fetch-full");
+    const draftModel = document.getElementById("draft-model");
+    const draftExtra = document.getElementById("draft-extra-prompt");
+    const draftRun = document.getElementById("draft-run");
+    const draftSubmit = document.getElementById("draft-submit");
+    const draftResult = document.getElementById("draft-result");
+    const draftError = document.getElementById("draft-error");
+    const draftStatus = document.getElementById("draft-status");
+    const draftPlink = document.getElementById("draft-proposal-link");
+    const draftAcc = document.getElementById("draft-account");
+    const cwSess = document.getElementById("cw-session-id");
+    const cwSave = document.getElementById("cw-save-session");
+    const cwChk = document.getElementById("cw-check-session");
+    const cwStat = document.getElementById("cw-session-status");
+    const cwPrice = document.getElementById("cw-bid-price");
+    let draftJid = null;
+    function openDraftModal(jobId) {
+      draftJid = jobId;
+      if (draftResult) draftResult.value = "";
+      if (draftSubmit) draftSubmit.disabled = true;
+      if (draftError) { draftError.hidden = true; draftError.textContent = ""; }
+      if (draftStatus) draftStatus.textContent = "";
+      const u = "https://crowdworks.jp/proposals/new?job_offer_id=" + encodeURIComponent(String(jobId));
+      if (draftPlink) draftPlink.href = u;
+      if (draftAcc && accSel && accSel.value) draftAcc.value = accSel.value; else if (draftAcc) draftAcc.selectedIndex = 0;
+      if (draftModal) { draftModal.classList.add("is-open"); draftModal.setAttribute("aria-hidden", "false"); }
+      if (draftApiKey) draftApiKey.focus();
+    }
+    function closeDraftModal() {
+      if (draftModal) { draftModal.classList.remove("is-open"); draftModal.setAttribute("aria-hidden", "true"); }
+      draftJid = null;
+    }
+    const table = document.getElementById("jobs-table");
+    if (table) {
+      table.addEventListener("click", function (ev) {
+        const b = ev.target && ev.target.closest("button._draftb");
+        if (b) {
+          openDraftModal(b.getAttribute("data-jid"));
+          return;
+        }
+        const pick = ev.target && ev.target.closest("input.job-pick");
+        if (pick) return;
+        const row = ev.target && ev.target.closest("tr.jobs-data-row");
+        if (row) {
+          const p = row.querySelector(".job-pick");
+          if (p) p.checked = true;
+        }
+      });
+    }
+    (function addDraftButtons() {
+      const tb = document.querySelector("#jobs-table tbody");
+      if (!tb) return;
+      // inject Draft column: last column approach — we use row double-click; add small button
+      const rs = tb.querySelectorAll("tr.jobs-data-row");
+      rs.forEach(function(tr) {
+        if (tr.querySelector("._draftb")) return;
+        const jid = tr.getAttribute("data-jid");
+        const t = tr.querySelector("td.title-cell");
+        if (!t) return;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn btn--sm _draftb";
+        btn.setAttribute("data-jid", jid);
+        btn.textContent = "Draft";
+        t.appendChild(document.createTextNode(" "));
+        t.appendChild(btn);
+      });
+    })();
+    if (draftModal) draftModal.querySelectorAll("[data-close-draft]").forEach(function (el) {
+      el.addEventListener("click", closeDraftModal);
+    });
+    document.getElementById("draft-close") && document.getElementById("draft-close").addEventListener("click", closeDraftModal);
+    document.getElementById("draft-copy") && document.getElementById("draft-copy").addEventListener("click", function () {
+      const t = draftResult && draftResult.value || "";
+      if (!t) return;
+      navigator.clipboard.writeText(t).then(function() { if (draftStatus) draftStatus.textContent = "Copied."; });
+    });
+    if (draftRun) draftRun.addEventListener("click", async function() {
+      if (!draftJid) return;
+      if (draftError) draftError.hidden = true;
+      if (draftStatus) draftStatus.textContent = "Generating…";
+      draftRun.disabled = true;
+      try {
+        const aid = draftAcc && draftAcc.value ? parseInt(draftAcc.value, 10) : null;
+        const r = await fetch("/api/jobs/" + encodeURIComponent(String(draftJid)) + "/draft-proposal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            api_key: (draftApiKey && draftApiKey.value) || "",
+            model: (draftModel && draftModel.value) || "gpt-4o-mini",
+            fetch_full_description: !!(draftFetchFull && draftFetchFull.checked),
+            extra_prompt: (draftExtra && draftExtra.value) || "",
+            account_id: aid
+          })
+        });
+        const data = await r.json().catch(function() { return {}; });
+        if (!r.ok || !data.ok) {
+          if (draftError) { draftError.textContent = (data && data.error) || ("HTTP " + r.status); draftError.hidden = false; }
+          if (draftStatus) draftStatus.textContent = "";
+          return;
+        }
+        if (draftResult) draftResult.value = data.text || "";
+        if (draftStatus) draftStatus.textContent = "Done.";
+        if (draftSubmit) draftSubmit.disabled = false;
+      } catch (e) {
+        if (draftError) { draftError.textContent = String(e); draftError.hidden = false; }
+      } finally { draftRun.disabled = false; }
+    });
+    if (draftResult) draftResult.addEventListener("input", function() {
+      if (draftSubmit) draftSubmit.disabled = !(draftResult && draftResult.value && draftResult.value.trim());
+    });
+    if (draftSubmit) draftSubmit.addEventListener("click", async function() {
+      if (!draftJid) return;
+      const msg = draftResult && draftResult.value && draftResult.value.trim();
+      if (!msg) { if (draftError) { draftError.textContent = "Generate a draft first."; draftError.hidden = false; } return; }
+      if (draftError) draftError.hidden = true;
+      if (draftStatus) draftStatus.textContent = "Submitting…";
+      const aid = draftAcc && draftAcc.value ? parseInt(draftAcc.value, 10) : null;
+      if (!aid) { if (draftError) { draftError.textContent = "Select an account for auto-submit (session from DB)."; draftError.hidden = false; } if (draftStatus) draftStatus.textContent = ""; return; }
+      const r = await fetch("/api/jobs/" + encodeURIComponent(String(draftJid)) + "/submit-bid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: aid,
+          message: msg,
+          price: (cwPrice && cwPrice.value) || "",
+          session_id: (cwSess && cwSess.value) ? cwSess.value.trim() : ""
+        })
+      });
+      const data = await r.json().catch(function() { return {}; });
+      if (!r.ok || !data.ok) {
+        if (draftError) { draftError.textContent = (data && data.error) || ("HTTP " + r.status); draftError.hidden = false; }
+        if (draftStatus) draftStatus.textContent = "";
+        return;
+      }
+      if (draftStatus) draftStatus.textContent = "OK";
+      try { if (data.url) window.open(data.url, "_blank", "noopener"); } catch (e) {}
+    });
+    if (cwChk) cwChk.addEventListener("click", async function() {
+      const aid = draftAcc && draftAcc.value ? parseInt(draftAcc.value, 10) : null;
+      const sid = (cwSess && cwSess.value) ? cwSess.value.trim() : "";
+      if (cwStat) { cwStat.textContent = "Checking…"; cwStat.style.color = ""; }
+      if (!aid) { if (cwStat) cwStat.textContent = "Select an account first."; return; }
+      const r = await fetch("/api/accounts/" + encodeURIComponent(String(aid)) + "/check-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sid, save: !!(cwSave && cwSave.checked) })
+      });
+      const d = await r.json().catch(function() { return {}; });
+      if (!r.ok || !d.ok) {
+        if (cwStat) { cwStat.textContent = (d && d.error) || "Failed"; cwStat.style.color = "var(--red)"; }
+        return;
+      }
+      if (cwStat) { cwStat.textContent = d.message || "OK"; cwStat.style.color = "var(--green-dk)"; }
+      if (cwSess && sid) cwSess.value = "";
+    });
+  })();
+  </script>
+{% endblock %}

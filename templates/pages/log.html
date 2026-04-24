@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">Activity Log</h1>
+  </div>
+  <div class="page__inner">
+    <div class="toolbar log-toolbar" role="toolbar">
+      <a class="btn" href="/log" title="Refresh">↻ Refresh</a>
+      <form method="post" action="/log/clear" class="log-toolbar" onsubmit="return confirm('Delete all log entries?');">
+        <button type="submit" class="btn btn--danger">Clear All Logs</button>
+      </form>
+    </div>
+    <div class="card" role="region" aria-label="Log entries">
+      <div class="table-wrap" style="max-height:none;">
+        <table class="data-table data-table--mono">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Account</th>
+              <th>Level</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in logs %}
+            <tr>
+              <td class="cell-mono">{{ (entry.get("created_at") or "")[:19] }}</td>
+              <td>{{ entry.get("account_name") or "System" }}</td>
+              <td>
+                <span class="pill-level pill-level--{{ (entry.get('level') or 'info')|e }}">
+                  {{ (entry.get("level") or "info")|upper }}
+                </span>
+              </td>
+              <td>{{ entry.get("message") or "" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted">No log entries.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

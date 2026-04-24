@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">{{ "Edit Prompt" if prompt else "Add Prompt" }}</h1>
+  </div>
+  <div class="page__inner" style="max-width: 720px;">
+    <p class="muted"><a href="/settings" class="btn btn--sm">← Back to Settings</a></p>
+    {% if error %}
+    <p class="banner banner--err" role="alert">{{ error }}</p>
+    {% endif %}
+    <form class="card" method="post" action="{{ form_action }}" style="padding: 16px;">
+      <div class="fgrid" style="grid-template-columns: 1fr">
+        <div class="field">
+          <span class="field__label">Name</span>
+          <input class="input" name="name" value="{{ (prompt.name if prompt else '')|e }}" required style="max-width:24rem" />
+        </div>
+        <div class="field" style="margin-top:8px">
+          <span class="field__label">Content</span>
+          <textarea class="input" name="content" rows="16" required style="width:100%; min-height: 240px; font-size:0.75rem;">{{ (prompt.content if prompt else '')|e }}</textarea>
+        </div>
+      </div>
+      <p class="toolbar" style="margin-top:1rem">
+        <a href="/settings" class="btn">Cancel</a>
+        <button type="submit" class="btn btn--primary">Save</button>
+      </p>
+    </form>
+  </div>
+{% endblock %}

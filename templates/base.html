@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}{{ page_title or "CrowdWorks Bot" }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app">
+    <header class="app__header" role="banner">
+      <div class="app__header-left">
+        <span class="app__header-dot" aria-hidden="true">&#9679;</span>
+        <span class="app__header-title">CrowdWorks Bot</span>
+        <span class="app__header-badge" title="Build">v2</span>
+      </div>
+      <div class="app__header-right">
+        <span class="app__header-bot-lbl" id="header-bot-lbl" title="Auto-bid &amp; Playwright: use the desktop app">—</span>
+        <button type="button" class="app__btn-start-bot" disabled
+          title="Start / Stop Bot: available in the desktop app (auto-bid uses Playwright).">&#9654; Start Bot</button>
+      </div>
+    </header>
+
+    <div class="app__body">
+      <aside class="app__sidebar" role="navigation" aria-label="Main">
+        <div class="app__sidebar-brand">
+          <span class="app__sidebar-brand-cw">CW</span>
+          <span class="app__sidebar-brand-txt">AutoBid</span>
+        </div>
+        <div class="app__sidebar-hr" aria-hidden="true"></div>
+        <ul class="app__nav">
+          <li class="app__nav-item">
+            <a class="app__nav-link{% if current_page == 'Dashboard' %} app__nav-link--active{% endif %}" href="/dashboard">◈&nbsp;Dashboard</a>
+          </li>
+          <li class="app__nav-item">
+            <a class="app__nav-link{% if current_page == 'Accounts' %} app__nav-link--active{% endif %}" href="/accounts">⊕&nbsp;Accounts</a>
+          </li>
+          <li class="app__nav-item">
+            <a class="app__nav-link{% if current_page == 'Jobs' %} app__nav-link--active{% endif %}" href="/jobs">▤&nbsp;Jobs</a>
+          </li>
+          <li class="app__nav-item">
+            <a class="app__nav-link{% if current_page == 'Settings' %} app__nav-link--active{% endif %}" href="/settings">⚙&nbsp;Settings</a>
+          </li>
+          <li class="app__nav-item">
+            <a class="app__nav-link{% if current_page == 'Log' %} app__nav-link--active{% endif %}" href="/log">☰&nbsp;Log</a>
+          </li>
+        </ul>
+        <p class="app__sidebar-foot">Web UI — use desktop for tray &amp; background bot</p>
+      </aside>
+
+      <main class="app__main" id="main-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <div class="app__statusbar" role="status">
+      <span class="app__status-dot" id="status-dot" aria-hidden="true">&#9679;</span>
+      <span id="status-text">{{ status_message or "Ready." }}</span>
+    </div>
+  </div>
+  {% block scripts %}{% endblock %}
+  <script>
+    (function() {
+      var d = document.getElementById("header-bot-lbl");
+      if (d) d.textContent = "Web UI";
+    })();
+  </script>
+</body>
+</html>

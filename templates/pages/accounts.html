@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">Accounts</h1>
+  </div>
+  <div class="page__inner">
+    <div class="toolbar" role="toolbar">
+      <a class="btn btn--primary" href="/accounts/new">+ Add Account</a>
+      <a class="btn" href="#" id="acc-btn-edit" onclick="var i=_sel(); if (!i) { alert('Select an account first.'); return false; } location.href = '/accounts/' + i + '/edit'; return false;">Edit</a>
+      <form id="f-del" method="post" action="" style="display:inline" onsubmit="if(!_sel()) return false; this.action='/accounts/' + _sel() + '/delete'; return confirm('Delete this account?');">
+        <button type="submit" class="btn btn--danger" {% if not accounts %}disabled{% endif %}>Delete</button>
+      </form>
+      <form method="post" action="" id="f-verify" style="display:inline" onsubmit="if(!_sel()) return false; this.action='/accounts/' + _sel() + '/verify'; return true;">
+        <button type="submit" class="btn" {% if not accounts %}disabled{% endif %}>Verify Session</button>
+      </form>
+      <form method="post" action="" id="f-toggle" style="display:inline" onsubmit="if(!_sel()) return false; this.action='/accounts/' + _sel() + '/toggle'; return true;">
+        <button type="submit" class="btn" {% if not accounts %}disabled{% endif %}>Enable / Disable</button>
+      </form>
+    </div>
+    {% if message %}
+    <p class="banner banner--ok" role="status">{{ message }}</p>
+    {% endif %}
+    {% if error %}
+    <p class="banner banner--err" role="alert">{{ error }}</p>
+    {% endif %}
+    <div class="card" role="region" aria-label="Accounts list">
+      <div class="table-wrap">
+        <table class="data-table data-table--mono">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>CW Username</th>
+              <th>Prompt</th>
+              <th>Status</th>
+              <th>Enabled</th>
+              <th>Total Bids</th>
+              <th>Last Verified</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in accounts %}
+            <tr>
+              <td><input type="radio" name="acc_pick" value="{{ a.id }}" form="acc-pick" /></td>
+              <td>{{ a.name }}</td>
+              <td>{{ a.cw_username or "—" }}</td>
+              <td>{{ a.prompt_name or "— (none)" }}</td>
+              <td>{{ (a.status or "unverified")|capitalize }}</td>
+              <td>{{ "Yes" if a.enabled else "No" }}</td>
+              <td>{{ bid_counts.get(a.id, 0) }}</td>
+              <td class="cell-mono">{{ (a.last_verified or "Never")[:16] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="muted">No accounts. Add one to get started.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <form id="acc-pick" style="display:none"></form>
+      </div>
+    </div>
+  </div>
+  <script>
+  function _sel() {
+    var r = document.querySelector('input[name="acc_pick"]:checked');
+    return r ? r.value : null;
+  }
+  </script>
+{% endblock %}

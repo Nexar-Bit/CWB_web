@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">Settings</h1>
+  </div>
+  <div class="page__inner settings-scroll">
+    {% if message %}
+    <p class="banner banner--ok" role="status">{{ message }}</p>
+    {% endif %}
+    {% if error %}
+    <p class="banner banner--err" role="alert">{{ error }}</p>
+    {% endif %}
+    <form class="card" method="post" action="/settings/save" style="padding: 16px;">
+      <h2 class="card__title" style="border:none; padding-top:0">Global Settings</h2>
+      <div class="fgrid">
+        <span class="field__label">OpenAI API Key</span>
+        <div class="field">
+          <input class="input" name="openai_api_key" type="password" id="okey" value="{{ s.openai_api_key|e }}" style="max-width:28rem" />
+          <input type="button" class="btn btn--sm" value="Show / Hide" style="margin-top:4px"
+            onclick="var e=document.getElementById('okey'); e.type=e.type==='password'?'text':'password';" />
+        </div>
+        <span class="field__label">Scrape Interval (s, min 10)</span>
+        <div class="field"><input class="input" name="scrape_interval" type="number" min="10" step="10" value="{{ s.scrape_interval|e }}" /></div>
+        <span class="field__label">Delay between feeds (s)</span>
+        <div class="field"><input class="input" name="feed_delay" type="number" min="0" max="10" step="0.5" value="{{ s.feed_delay|e }}" /></div>
+        <span class="field__label">Max pages per feed (≥1)</span>
+        <div class="field">
+          <input class="input" name="max_scrape_pages" type="number" min="1" max="20" value="{{ s.max_scrape_pages|e }}" />
+          <span class="hint-sm">(higher = finds older jobs; slower scrape)</span>
+        </div>
+        <span class="field__label">Max parallel bids (≥1)</span>
+        <div class="field">
+          <input class="input" name="max_parallel_bids" type="number" min="1" max="50" value="{{ s.max_parallel_bids|e }}" />
+          <span class="hint-sm">(concurrent browser windows; desktop only)</span>
+        </div>
+        <span class="field__label">Bid Age Limit (hours)</span>
+        <div class="field">
+          <input class="input" name="bid_max_age_hours" type="number" min="1" max="720" value="{{ s.bid_max_age_hours|e }}" />
+        </div>
+        <span class="field__label">Show browser</span>
+        <div class="field field--inline">
+          <label><input type="checkbox" name="show_browser" value="1" {{ 'checked' if s.show_browser == '1' else '' }} /> Show browser for monitoring (desktop)</label>
+        </div>
+        <span class="field__label">Bid Price % of Budget</span>
+        <div class="field">
+          <input class="input" name="bid_price_pct" type="number" min="0" max="100" value="{{ s.bid_price_pct|e }}" style="max-width:6rem" />
+          <span class="hint-sm">0% = min · 100% = max (desktop auto-bid)</span>
+        </div>
+        <span class="field__label">AI Model</span>
+        <div class="field">
+          <select class="select select-row" name="openai_model">
+            {% for m in ai_models %}
+            <option value="{{ m }}" {% if s.openai_model == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+          <span class="hint-sm">(used to generate bid proposals)</span>
+        </div>
+      </div>
+      <p class="toolbar"><button type="submit" class="btn btn--primary">Save Settings</button></p>
+    </form>
+
+    <div class="card" style="padding:0">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border)">
+        <h2 class="page__hdr-title" style="margin:0;border:none; padding:0; font-size:0.8rem">Prompt Library</h2>
+        <div>
+          <a class="btn btn--primary" href="/prompts/new">+ Add Prompt</a>
+          <a class="btn" href="/prompts" id="p-edit" style="display:none">Edit</a>
+          <form id="f-p-del" method="post" action="" style="display:inline" onsubmit="return confirm('Delete?');">
+            <button type="submit" class="btn btn--danger" disabled id="p-del-btn">Delete</button>
+          </form>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height:none">
+        <table class="data-table" id="ptable">
+          <thead>
+            <tr>
+              <th style="width:2.5rem"></th>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Content Preview</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in prompts %}
+            <tr>
+              <td><input type="radio" name="p_pick" value="{{ p.id }}" class="p-pick" form="pform" /></td>
+              <td class="cell-mono">{{ p.id }}</td>
+              <td><a href="/prompts/{{ p.id }}/edit">{{ p.name }}</a></td>
+              <td class="prompt-preview" title="{{ p.content|e }}">{{ (p.content|replace("\n", " "))[:140] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted">No prompts yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <form id="pform" style="display:none"></form>
+      </div>
+    </div>
+  </div>
+  <form id="p-del-frm" style="display:none" method="post" action=""></form>
+  <script>
+  (function() {
+    var picks = document.querySelectorAll('.p-pick');
+    var editA = document.getElementById('p-edit');
+    var delB = document.getElementById('p-del-btn');
+    function onCh() {
+      var r = document.querySelector('input.p-pick:checked');
+      if (editA) { editA.style.display = r ? 'inline' : 'none'; editA.href = r ? '/prompts/' + r.value + '/edit' : '#'; }
+      if (delB) { delB.disabled = !r; if (r) document.getElementById('f-p-del').action = '/prompts/' + r.value + '/delete'; }
+    }
+    picks.forEach(function(x) { x.addEventListener('change', onCh); });
+  })();
+  </script>
+{% endblock %}

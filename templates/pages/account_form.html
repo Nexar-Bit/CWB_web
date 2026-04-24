@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">{{ "Edit Account" if account else "Add Account" }}</h1>
+  </div>
+  <div class="page__inner" style="max-width: 560px;">
+    <p class="muted"><a href="/accounts" class="btn btn--sm">← Back</a></p>
+    {% if error %}
+    <p class="banner banner--err" role="alert">{{ error }}</p>
+    {% endif %}
+    <form class="card" method="post" action="{{ form_action }}" style="padding: 16px;">
+      <div class="fgrid">
+        <span class="field__label">Display Name</span>
+        <div class="field"><input class="input" name="name" value="{{ (account.name if account else '')|e }}" required /></div>
+        <span class="field__label">_cw_session_id</span>
+        <div class="field">
+          <input class="input" name="session_id" type="password" id="sid" value="{{ (account.session_id if account else '')|e }}"
+                 autocomplete="off" spellcheck="false" required />
+          <label class="field field--inline" style="margin-top:4px">
+            <input type="button" class="btn btn--sm" value="Show / Hide" onclick="var e=document.getElementById('sid'); e.type=e.type==='password'?'text':'password';" />
+          </label>
+        </div>
+        <span class="field__label">Prompt</span>
+        <div class="field">
+          <select class="select select-row" name="prompt_id">
+            <option value="" {% if not account or not account.prompt_id %}selected{% endif %}>(none)</option>
+            {% for p in prompts %}
+            <option value="{{ p.id }}" {% if account and account.prompt_id == p.id %}selected{% endif %}>
+              [{{ p.id }}] {{ p.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <span class="field__label">Enabled</span>
+        <div class="field field--inline">
+          <input type="checkbox" name="enabled" value="1" {% if not account or account.enabled %}checked{% endif %} />
+        </div>
+      </div>
+      <p class="toolbar" style="margin-top:1rem">
+        <button type="button" class="btn" id="btn-verify" formaction="#">Verify Session (check)</button>
+        <a href="/accounts" class="btn">Cancel</a>
+        <button type="submit" class="btn btn--primary">Save</button>
+      </p>
+      <p class="muted" id="verify-msg" style="min-height:1.2em" aria-live="polite"></p>
+    </form>
+    <script>
+    (function() {
+      var b = document.getElementById("btn-verify");
+      if (!b) return;
+      b.addEventListener("click", function() {
+        var sid = document.getElementById("sid");
+        var msg = document.getElementById("verify-msg");
+        var v = (sid && sid.value) || "";
+        if (!v) { if (msg) msg.textContent = "Paste a session ID first."; return; }
+        if (msg) msg.textContent = "Checking…";
+        fetch("/api/verify-session-raw", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: v.trim() })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+        .then(function(x) {
+          if (x.d && x.d.ok) {
+            if (msg) msg.textContent = x.d.message || "Session active";
+          } else {
+            if (msg) msg.textContent = (x.d && x.d.error) || "Check failed";
+          }
+        })
+        .catch(function(e) { if (msg) msg.textContent = String(e); });
+      });
+    })();
+    </script>
+  </div>
+{% endblock %}

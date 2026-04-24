@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">Dashboard</h1>
+  </div>
+  <div class="page__inner">
+    <div class="stat-row" role="region" aria-label="Stats">
+      <div class="stat-card">
+        <div class="stat-card__accent stat-card__accent--blue"></div>
+        <span class="stat-card__label">Active Accounts</span>
+        <span class="stat-card__value" id="st-acc">{{ active_accounts }} / {{ total_accounts }}</span>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__accent stat-card__accent--green"></div>
+        <span class="stat-card__label">Total Jobs</span>
+        <span class="stat-card__value" id="st-jobs">{{ total_jobs }}</span>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__accent stat-card__accent--yellow"></div>
+        <span class="stat-card__label">Bids (session)</span>
+        <span class="stat-card__value" id="st-bid">{{ bids_session }}</span>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card__accent stat-card__accent--gray"></div>
+        <span class="stat-card__label">Bot Status</span>
+        <span class="stat-card__value" id="st-bot" style="font-size:1rem">{{ bot_status }}</span>
+      </div>
+    </div>
+
+    <div class="card" role="region" aria-label="Recent activity">
+      <h2 class="card__title">Recent Activity</h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Account</th>
+              <th>Level</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in recent_logs %}
+            <tr>
+              <td class="cell-mono">{{ (entry.get("created_at") or "")[:19] }}</td>
+              <td>{{ entry.get("account_name") or "System" }}</td>
+              <td>
+                <span class="pill-level pill-level--{{ (entry.get('level') or 'info')|e }}">
+                  {{ (entry.get("level") or "info")|upper }}
+                </span>
+              </td>
+              <td>{{ entry.get("message") or "" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted">No log entries yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}
