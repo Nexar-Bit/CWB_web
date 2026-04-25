@@ -162,18 +162,35 @@ def data_file_updated_utc() -> str | None:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _is_admin(request: Request) -> bool:
+    uid = getattr(request.state, "user_id", None)
+    if uid is None:
+        return False
+    try:
+        row = db.user_by_id(int(uid))
+        return bool(row and row.get("role") == "admin")
+    except Exception:
+        return False
+
+
 def _ctx(request: Request, current_page: str, **kwargs: object) -> dict[str, object]:
     auth_email = ""
+    is_admin = False
     uid = getattr(request.state, "user_id", None)
     if uid is not None:
-        row = db.user_by_id(int(uid))
+        try:
+            row = db.user_by_id(int(uid))
+        except Exception:
+            row = None
         if row:
             auth_email = (str(row.get("email") or ""))[:80]
+            is_admin = row.get("role") == "admin"
     base: dict[str, object] = {
         "request": request,
         "current_page": current_page,
         "status_message": kwargs.pop("status_message", "Ready."),
         "auth_email": auth_email,
+        "is_admin": is_admin,
     }
     base.update(kwargs)
     return base
@@ -342,6 +359,17 @@ def post_login(
             f"/login?error=That%20account%20is%20for%20the%20local%20desktop%20app%20only&next={quote(nxt2, safe='')}",
             status_code=303,
         )
+    role = str(row.get("role") or "pending")
+    if role == "pending":
+        return RedirectResponse(
+            f"/login?error=Your+account+is+awaiting+admin+approval.&next={quote(nxt2, safe='')}",
+            status_code=303,
+        )
+    if role == "rejected":
+        return RedirectResponse(
+            f"/login?error=Your+account+registration+has+been+rejected.&next={quote(nxt2, safe='')}",
+            status_code=303,
+        )
     request.session["user_id"] = int(row["id"])
     return RedirectResponse(nxt2, status_code=303)
 
@@ -350,6 +378,7 @@ def post_login(
 def page_register(
     request: Request,
     error: str = Query("", max_length=500),
+    pending: str = Query("", max_length=1),
 ) -> object:
     if not ALLOW_REGISTER:
         return HTMLResponse("Registration is disabled on this instance.", status_code=403)
@@ -362,6 +391,7 @@ def page_register(
             "request": request,
             "page_title": "Create account",
             "error": (error or "").strip(),
+            "pending": pending == "1",
         },
     )
 
@@ -394,9 +424,9 @@ def post_register(
             status_code=303,
         )
     h = authx.hash_password((password or "").strip())
-    uid = db.user_register(e.lower(), h)
-    request.session["user_id"] = int(uid)
-    return RedirectResponse("/dashboard", status_code=303)
+    db.user_register(e.lower(), h)
+    # New accounts start as 'pending' — do not create a session; redirect to approval notice.
+    return RedirectResponse("/register?pending=1", status_code=303)
 
 
 @app.get("/logout", response_class=HTMLResponse)
@@ -414,6 +444,43 @@ def logout(request: Request) -> object:
             value="",
         )
     return r
+
+
+# ── Admin routes ──────────────────────────────────────────────────────────────
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users(request: Request, message: str = Query("", max_length=200)) -> object:
+    if not _is_admin(request):
+        return RedirectResponse("/dashboard", status_code=302)
+    users = db.list_all_users()
+    return templates.TemplateResponse(
+        request,
+        "pages/admin_users.html",
+        _ctx(
+            request,
+            "Admin",
+            page_title="User Management — CrowdWorks Bot",
+            users=users,
+            message=(message or "").strip(),
+            admin_email=db.ADMIN_EMAIL,
+        ),
+    )
+
+
+@app.post("/admin/users/{uid}/approve", response_class=HTMLResponse)
+def admin_approve_user(request: Request, uid: int) -> object:
+    if not _is_admin(request):
+        return RedirectResponse("/dashboard", status_code=302)
+    db.set_user_role(uid, "active")
+    return RedirectResponse("/admin/users?message=User+approved.", status_code=303)
+
+
+@app.post("/admin/users/{uid}/reject", response_class=HTMLResponse)
+def admin_reject_user(request: Request, uid: int) -> object:
+    if not _is_admin(request):
+        return RedirectResponse("/dashboard", status_code=302)
+    db.set_user_role(uid, "rejected")
+    return RedirectResponse("/admin/users?message=User+rejected.", status_code=303)
 
 
 # ── Page routes (desktop parity) ──────────────────────────────────────────────
@@ -1342,6 +1409,18 @@ class _CwordWebAccessMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path or "/"
         uid = get_effective_user_id(request)
+
+        # If uid came from a session cookie, verify the user still exists in the DB.
+        # Stale cookies (e.g. from a previous SQLite deployment) would carry a uid
+        # that no longer exists in PostgreSQL, which leaves auth_email empty.
+        if uid is not None and request.session.get("user_id") is not None:
+            try:
+                if db.user_by_id(uid) is None:
+                    request.session.clear()
+                    uid = None
+            except Exception:
+                pass  # DB unreachable — let the request proceed; routes will surface the error
+
         if uid is not None:
             request.state.user_id = int(uid)
         if _is_public_path(path):

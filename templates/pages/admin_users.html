@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page__hdr">
+    <span class="page__hdr-bar" aria-hidden="true"></span>
+    <h1 class="page__hdr-title">User Management</h1>
+  </div>
+  <div class="page__inner">
+
+    {% if message %}
+    <div class="banner banner--ok" role="status" style="margin-bottom:16px">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M5 8l2.5 2.5L11 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {{ message }}
+    </div>
+    {% endif %}
+
+    {% set pending_users = users | selectattr("role", "equalto", "pending") | list %}
+    {% if pending_users %}
+    <div class="banner banner--warn" role="alert" style="margin-bottom:16px">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.5M8 10.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      {{ pending_users | length }} account{{ 's' if pending_users | length != 1 }} awaiting approval.
+    </div>
+    {% endif %}
+
+    <div class="card" role="region" aria-label="All users">
+      <h2 class="card__title">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2" opacity=".7"/><path d="M1.5 12c0-2.5 2.46-4.5 5.5-4.5s5.5 2 5.5 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".7"/></svg>
+        All Users
+      </h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Registered</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            {% set is_self = (u.email == auth_email) %}
+            {% set is_builtin = (u.email == admin_email) %}
+            <tr>
+              <td>
+                {{ u.email }}
+                {% if is_self %}<span class="muted" style="font-size:.8em"> (you)</span>{% endif %}
+              </td>
+              <td>
+                {% if u.role == 'admin' %}
+                  <span class="pill-level pill-level--info" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd">Admin</span>
+                {% elif u.role == 'active' %}
+                  <span class="pill-level pill-level--info" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7">Active</span>
+                {% elif u.role == 'pending' %}
+                  <span class="pill-level pill-level--warn" style="background:#fffbeb;color:#92400e;border-color:#fcd34d">Pending</span>
+                {% elif u.role == 'rejected' %}
+                  <span class="pill-level pill-level--err" style="background:#fef2f2;color:#991b1b;border-color:#fca5a5">Rejected</span>
+                {% else %}
+                  <span class="muted">{{ u.role }}</span>
+                {% endif %}
+              </td>
+              <td class="cell-mono muted">{{ (u.created_at or "")[:10] }}</td>
+              <td style="text-align:right;white-space:nowrap">
+                {% if not is_self and not is_builtin and u.role != 'admin' %}
+                  {% if u.role != 'active' %}
+                  <form method="post" action="/admin/users/{{ u.id }}/approve" style="display:inline">
+                    <button type="submit" class="btn btn--primary" style="font-size:.8rem;padding:4px 10px">Approve</button>
+                  </form>
+                  {% endif %}
+                  {% if u.role != 'rejected' %}
+                  <form method="post" action="/admin/users/{{ u.id }}/reject" style="display:inline;margin-left:6px"
+                        onsubmit="return confirm('Reject this account?')">
+                    <button type="submit" class="btn btn--danger" style="font-size:.8rem;padding:4px 10px">Reject</button>
+                  </form>
+                  {% endif %}
+                {% else %}
+                  <span class="muted" style="font-size:.8em">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="muted" style="padding:20px 12px">No users yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+{% endblock %}

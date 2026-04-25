@@ -17,6 +17,14 @@
       </div>
 
       <div class="auth__card">
+        {% if pending %}
+        <h1 class="auth__title">Registration submitted</h1>
+        <div class="banner banner--ok" role="status" style="margin-bottom:16px">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M5 8l2.5 2.5L11 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Your account has been created and is awaiting admin approval. You will be able to sign in once an administrator approves your account.
+        </div>
+        <a class="btn btn--primary auth__submit" href="/login">Back to sign in</a>
+        {% else %}
         <h1 class="auth__title">Create your account</h1>
 
         {% if error %}
@@ -44,6 +52,7 @@
           </div>
           <button class="btn btn--primary auth__submit" type="submit">Create account</button>
         </form>
+        {% endif %}
       </div>
 
       <p class="auth__foot">

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any, Generator
 
 import psycopg2
@@ -32,6 +33,13 @@ DATABASE_URL: str = os.environ.get(
 
 # Single-user / legacy desktop: always this row in ``users`` (email __local@desktop).
 DESKTOP_USER_ID = 1
+
+# Built-in administrator account created on first run.
+ADMIN_EMAIL = "admin@admin.admin"
+_ADMIN_PASSWORD = "Cobra_1983730"
+
+# User roles:  'admin' | 'active' | 'pending' | 'rejected'
+# New registrations start as 'pending' and require admin approval.
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
@@ -55,6 +63,15 @@ class _Conn:
     def execute(self, sql: str, params: Any = None) -> psycopg2.extras.RealDictCursor:
         self._cur.execute(sql, params)
         return self._cur
+
+
+def _row_to_dict(row: Any) -> dict:
+    """Convert a RealDictRow to a plain dict, normalising datetime → ISO string."""
+    d = dict(row)
+    for k, v in d.items():
+        if isinstance(v, datetime):
+            d[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+    return d
 
 
 @contextmanager
@@ -82,6 +99,7 @@ CREATE TABLE IF NOT EXISTS users (
     id            SERIAL PRIMARY KEY,
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'pending',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -145,15 +163,39 @@ def init() -> None:
             if stmt:
                 con.execute(stmt)
 
+    _migrate_schema()
     _ensure_local_desktop_user()
+    _ensure_admin_user()
     _migrate_from_json()
+
+
+def _migrate_schema() -> None:
+    """Add columns introduced after the initial schema so existing DBs stay compatible."""
+    with _conn() as con:
+        has_role = con.execute(
+            "SELECT 1 FROM information_schema.columns"
+            " WHERE table_name = 'users' AND column_name = 'role'",
+        ).fetchone()
+        if not has_role:
+            con.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'pending'")
+            # Existing desktop / admin rows become admin; everyone else was already active.
+            con.execute(
+                "UPDATE users SET role = 'admin'"
+                " WHERE id = %s OR lower(email) = %s",
+                (DESKTOP_USER_ID, ADMIN_EMAIL),
+            )
+            con.execute(
+                "UPDATE users SET role = 'active'"
+                " WHERE role = 'pending' AND id != %s AND lower(email) != %s",
+                (DESKTOP_USER_ID, ADMIN_EMAIL),
+            )
 
 
 def _ensure_local_desktop_user() -> None:
     with _conn() as con:
         con.execute(
-            "INSERT INTO users (id, email, password_hash)"
-            " VALUES (1, '__local@desktop', '*')"
+            "INSERT INTO users (id, email, password_hash, role)"
+            " VALUES (1, '__local@desktop', '*', 'admin')"
             " ON CONFLICT DO NOTHING"
         )
         # Keep the sequence ahead of the manually-inserted id=1 row.
@@ -162,6 +204,25 @@ def _ensure_local_desktop_user() -> None:
             "  pg_get_serial_sequence('users', 'id'),"
             "  GREATEST(1, (SELECT MAX(id) FROM users))"
             ")"
+        )
+
+
+def _ensure_admin_user() -> None:
+    """Create (or repair) the built-in admin account."""
+    import bcrypt as _bcrypt
+
+    existing = user_by_email(ADMIN_EMAIL)
+    if existing:
+        if existing.get("role") != "admin":
+            set_user_role(int(existing["id"]), "admin")
+        return
+    h = _bcrypt.hashpw(_ADMIN_PASSWORD.encode(), _bcrypt.gensalt(rounds=12)).decode("ascii")
+    with _conn() as con:
+        con.execute(
+            "INSERT INTO users (email, password_hash, role)"
+            " VALUES (%s, %s, 'admin')"
+            " ON CONFLICT (email) DO UPDATE SET role = 'admin'",
+            (ADMIN_EMAIL, h),
         )
 
 
@@ -229,12 +290,43 @@ def _bid_scoped_id(account_id: int | None) -> int:
 # ---------------------------------------------------------------------------
 
 def user_register(email: str, password_hash: str) -> int:
+    """Register a new user with role='pending' (requires admin approval)."""
     with _conn() as con:
         row = con.execute(
-            "INSERT INTO users(email, password_hash) VALUES(%s, %s) RETURNING id",
+            "INSERT INTO users(email, password_hash, role) VALUES(%s, %s, 'pending') RETURNING id",
             (email, password_hash),
         ).fetchone()
     return int(row["id"]) if row else 0
+
+
+def list_all_users() -> list[dict]:
+    """Return all non-desktop users ordered by pending first, for the admin panel."""
+    with _conn() as con:
+        rows = con.execute(
+            """
+            SELECT id, email, role, created_at FROM users
+            WHERE id != %s
+            ORDER BY
+                CASE role
+                    WHEN 'pending'  THEN 0
+                    WHEN 'active'   THEN 1
+                    WHEN 'admin'    THEN 2
+                    ELSE 3
+                END,
+                id
+            """,
+            (DESKTOP_USER_ID,),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def set_user_role(user_id: int, role: str) -> None:
+    """Update a user's role. The desktop system account cannot be changed."""
+    with _conn() as con:
+        con.execute(
+            "UPDATE users SET role = %s WHERE id = %s AND id != %s",
+            (role, user_id, DESKTOP_USER_ID),
+        )
 
 
 def user_by_email(email: str) -> dict | None:
@@ -243,7 +335,7 @@ def user_by_email(email: str) -> dict | None:
         row = con.execute(
             "SELECT * FROM users WHERE lower(email) = %s", (e,)
         ).fetchone()
-    return dict(row) if row else None
+    return _row_to_dict(row) if row else None
 
 
 def user_by_id(uid: int) -> dict | None:
@@ -251,7 +343,7 @@ def user_by_id(uid: int) -> dict | None:
         row = con.execute(
             "SELECT * FROM users WHERE id = %s", (uid,)
         ).fetchone()
-    return dict(row) if row else None
+    return _row_to_dict(row) if row else None
 
 
 def is_internal_desktop_user(uid: int) -> bool:
@@ -292,7 +384,7 @@ def list_prompts(user_id: int) -> list[dict]:
         rows = con.execute(
             "SELECT * FROM prompts WHERE user_id = %s ORDER BY id", (user_id,)
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 def get_prompt(user_id: int, prompt_id: int) -> dict | None:
@@ -301,7 +393,7 @@ def get_prompt(user_id: int, prompt_id: int) -> dict | None:
             "SELECT * FROM prompts WHERE id = %s AND user_id = %s",
             (prompt_id, user_id),
         ).fetchone()
-    return dict(row) if row else None
+    return _row_to_dict(row) if row else None
 
 
 def add_prompt(user_id: int, name: str, content: str) -> int:
@@ -347,7 +439,7 @@ def list_accounts(user_id: int) -> list[dict]:
             """,
             (user_id,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 def get_account(user_id: int, account_id: int) -> dict | None:
@@ -361,7 +453,7 @@ def get_account(user_id: int, account_id: int) -> dict | None:
             """,
             (account_id, user_id),
         ).fetchone()
-    return dict(row) if row else None
+    return _row_to_dict(row) if row else None
 
 
 def add_account(
@@ -586,7 +678,7 @@ def list_logs(user_id: int, limit: int = 300) -> list[dict]:
             """,
             (user_id, limit),
         ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 def clear_logs(user_id: int) -> None:
