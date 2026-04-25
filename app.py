@@ -1179,13 +1179,19 @@ def draft_proposal_api(request: Request, job_id: int, body: DraftProposalBody) -
         acc = db.get_account(u, int(body.account_id))
         if acc and (acc.get("prompt_content") or "").strip():
             extra = (str(acc.get("prompt_content", "")) + "\n" + extra).strip()
+    bid_price_pct = 0
     try:
-        text = proposal_draft.generate_proposal_draft(
+        bid_price_pct = int(db.get_setting(u, "bid_price_pct", "0") or 0)
+    except (ValueError, TypeError):
+        pass
+    try:
+        fields = proposal_draft.generate_bid_fields(
             job,
             key,
             model=model,
             fetch_full_description=body.fetch_full_description,
             extra_prompt=extra,
+            bid_price_pct=bid_price_pct,
         )
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
@@ -1194,7 +1200,14 @@ def draft_proposal_api(request: Request, job_id: int, body: DraftProposalBody) -
             {"ok": False, "error": f"{type(e).__name__}: {e}"}, status_code=502
         )
     proposal_url = f"https://crowdworks.jp/proposals/new?job_offer_id={job_id}"
-    return JSONResponse({"ok": True, "text": text, "proposal_url": proposal_url})
+    return JSONResponse({
+        "ok": True,
+        "text":          fields["message"],
+        "price":         fields.get("price", ""),
+        "delivery_days": fields.get("delivery_days", ""),
+        "price_mode":    fields.get("price_mode", ""),
+        "proposal_url":  proposal_url,
+    })
 
 
 @app.post("/api/jobs/{job_id}/submit-bid")

@@ -61,6 +61,10 @@
       <button type="button" class="btn btn--primary" id="btn-mark-yes">Mark bid placed</button>
       <button type="button" class="btn" id="btn-mark-no">Unmark bid</button>
       <button type="button" class="btn" id="btn-retry">↺ Retry Failed</button>
+      <button type="button" class="btn" id="btn-preview" style="margin-left:auto">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 3.5v3l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Bid Proposal Preview
+      </button>
     </div>
 
     <div class="card" style="padding:0" role="region" aria-label="Job listings">
@@ -111,6 +115,73 @@
     </div>
 
     <p class="muted" id="job-status-hint" style="margin-top:0.5rem" aria-live="polite">Jobs: <span id="js-shown">0</span> shown</p>
+  </div>
+
+  <!-- ── Bid Proposal Preview modal ─────────────────────────────────────── -->
+  <div id="preview-modal" class="modal" aria-hidden="true">
+    <div class="modal__backdrop" data-close-preview></div>
+    <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="preview-title" style="max-width:680px">
+      <h2 id="preview-title" class="modal__title">Bid Proposal Preview</h2>
+      <p id="preview-job-label" class="muted modal__hint" style="padding:0 1.25rem;margin-top:-4px;margin-bottom:8px"></p>
+
+      <div style="padding:0 1.25rem;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="field" style="margin:0;grid-column:1/-1">
+          <span class="field__label">Account (prompt &amp; settings)</span>
+          <select id="pv-account" class="select" style="width:100%">
+            <option value="">— Select account —</option>
+            {% for a in accounts_list %}
+            <option value="{{ a.id }}">[{{ a.id }}] {{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field" style="margin:0">
+          <span class="field__label">OpenAI API key (blank = from Settings)</span>
+          <input id="pv-api-key" type="password" class="input" style="width:100%" autocomplete="off" placeholder="sk-…" />
+        </label>
+        <label class="field" style="margin:0">
+          <span class="field__label">Model</span>
+          <input id="pv-model" type="text" class="input" style="width:100%" value="{{ default_model|e }}" />
+        </label>
+        <label class="field field--inline" style="margin:0;grid-column:1/-1">
+          <input id="pv-fetch-full" type="checkbox" checked />
+          <span style="font-size:.85rem">Fetch full description from job page (recommended)</span>
+        </label>
+        <label class="field" style="margin:0;grid-column:1/-1">
+          <span class="field__label">Additional prompt instructions (appended to account prompt)</span>
+          <textarea id="pv-extra" class="input" rows="2" style="width:100%;resize:vertical" placeholder="e.g. 丁寧語で。単価はレンジ上限…"></textarea>
+        </label>
+      </div>
+
+      <div class="modal__actions-top">
+        <button type="button" class="btn btn--primary" id="pv-run">Generate Preview</button>
+        <span id="pv-status" class="muted" style="font-size:.85rem"></span>
+      </div>
+      <div id="pv-error" class="banner banner--err" role="alert" hidden style="margin:0 1.25rem 8px"></div>
+
+      <!-- Results -->
+      <div id="pv-results" hidden style="padding:0 1.25rem">
+        <div style="display:flex;gap:12px;margin-bottom:14px">
+          <div style="flex:1;border:1px solid var(--border);border-radius:6px;padding:12px 14px;background:var(--page-bg)">
+            <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Bid Budget</div>
+            <div id="pv-price" style="font-size:1.35rem;font-weight:600;font-family:var(--mono);color:var(--green-dk)">—</div>
+            <div id="pv-price-mode" style="font-size:.72rem;color:var(--text3);margin-top:2px"></div>
+          </div>
+          <div style="flex:1;border:1px solid var(--border);border-radius:6px;padding:12px 14px;background:var(--page-bg)">
+            <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Delivery Days</div>
+            <div id="pv-days" style="font-size:1.35rem;font-weight:600;font-family:var(--mono);color:var(--text1)">—</div>
+          </div>
+        </div>
+        <label class="field" style="margin:0">
+          <span class="field__label">Proposal Message</span>
+          <textarea id="pv-message" class="input" rows="14" readonly style="width:100%;resize:vertical;white-space:pre-wrap;font-size:.85rem;line-height:1.6"></textarea>
+        </label>
+      </div>
+
+      <div class="modal__actions">
+        <button type="button" class="btn" id="pv-copy" disabled>Copy Message</button>
+        <button type="button" class="btn" id="pv-close">Close</button>
+      </div>
+    </div>
   </div>
 
   <div id="draft-modal" class="modal" aria-hidden="true">
@@ -431,6 +502,134 @@
       if (cwStat) { cwStat.textContent = d.message || "OK"; cwStat.style.color = "var(--green-dk)"; }
       if (cwSess && sid) cwSess.value = "";
     });
+
+    /* ── Bid Proposal Preview modal ──────────────────────────────────────── */
+    (function () {
+      const pvModal   = document.getElementById("preview-modal");
+      const pvRun     = document.getElementById("pv-run");
+      const pvClose   = document.getElementById("pv-close");
+      const pvCopy    = document.getElementById("pv-copy");
+      const pvStatus  = document.getElementById("pv-status");
+      const pvError   = document.getElementById("pv-error");
+      const pvResults = document.getElementById("pv-results");
+      const pvPrice   = document.getElementById("pv-price");
+      const pvMode    = document.getElementById("pv-price-mode");
+      const pvDays    = document.getElementById("pv-days");
+      const pvMsg     = document.getElementById("pv-message");
+      const pvAcc     = document.getElementById("pv-account");
+      const pvApiKey  = document.getElementById("pv-api-key");
+      const pvModel   = document.getElementById("pv-model");
+      const pvFetch   = document.getElementById("pv-fetch-full");
+      const pvExtra   = document.getElementById("pv-extra");
+      const pvLabel   = document.getElementById("pv-job-label");
+      let pvJid = null;
+
+      function fmtYen(val) {
+        const n = parseInt(String(val || "").replace(/\D/g, ""), 10);
+        if (!n) return "—";
+        return "¥" + n.toLocaleString("ja-JP");
+      }
+
+      function pvReset() {
+        if (pvError)   { pvError.hidden = true; pvError.textContent = ""; }
+        if (pvStatus)  pvStatus.textContent = "";
+        if (pvResults) pvResults.hidden = true;
+        if (pvMsg)     pvMsg.value = "";
+        if (pvPrice)   pvPrice.textContent = "—";
+        if (pvMode)    pvMode.textContent = "";
+        if (pvDays)    pvDays.textContent = "—";
+        if (pvCopy)    pvCopy.disabled = true;
+      }
+
+      function pvOpen(jobId) {
+        pvJid = jobId;
+        pvReset();
+        // Pre-select account from the account filter if one is active
+        if (pvAcc && accSel && accSel.value) pvAcc.value = accSel.value;
+        // Show job title in the subtitle
+        const row = document.querySelector('#jobs-table tbody tr[data-jid="' + jobId + '"]');
+        if (pvLabel) {
+          if (row) {
+            const titleEl = row.querySelector(".title-cell");
+            const rawTitle = titleEl ? titleEl.textContent.replace(/Draft\s*$/, "").trim() : "";
+            pvLabel.textContent = "Job #" + jobId + (rawTitle ? "  ·  " + rawTitle.slice(0, 80) : "");
+          } else {
+            pvLabel.textContent = "Job #" + jobId;
+          }
+        }
+        if (pvModal) { pvModal.classList.add("is-open"); pvModal.setAttribute("aria-hidden", "false"); }
+        if (pvRun) pvRun.focus();
+      }
+
+      function pvClose_() {
+        if (pvModal) { pvModal.classList.remove("is-open"); pvModal.setAttribute("aria-hidden", "true"); }
+        pvJid = null;
+      }
+
+      const btnPreview = document.getElementById("btn-preview");
+      if (btnPreview) btnPreview.addEventListener("click", function () {
+        const id = selectedId();
+        if (!id) { alert("Select a job row first."); return; }
+        pvOpen(id);
+      });
+
+      if (pvModal) pvModal.querySelectorAll("[data-close-preview]").forEach(function (el) {
+        el.addEventListener("click", pvClose_);
+      });
+      if (pvClose) pvClose.addEventListener("click", pvClose_);
+
+      if (pvRun) pvRun.addEventListener("click", async function () {
+        if (!pvJid) return;
+        pvReset();
+        if (pvStatus) pvStatus.textContent = "Generating…";
+        pvRun.disabled = true;
+        try {
+          const aid = pvAcc && pvAcc.value ? parseInt(pvAcc.value, 10) : null;
+          const body = {
+            api_key:               (pvApiKey && pvApiKey.value) || "",
+            model:                 (pvModel  && pvModel.value)  || "gpt-4o-mini",
+            fetch_full_description: !!(pvFetch && pvFetch.checked),
+            extra_prompt:          (pvExtra  && pvExtra.value)  || "",
+            account_id:            aid,
+          };
+          const r = await fetch(
+            "/api/jobs/" + encodeURIComponent(String(pvJid)) + "/draft-proposal",
+            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+          );
+          const d = await r.json().catch(function () { return {}; });
+          if (!r.ok || !d.ok) {
+            if (pvError) { pvError.textContent = (d && d.error) || ("HTTP " + r.status); pvError.hidden = false; }
+            if (pvStatus) pvStatus.textContent = "";
+            return;
+          }
+          // Populate results
+          if (pvPrice) pvPrice.textContent = fmtYen(d.price);
+          if (pvMode)  pvMode.textContent  = d.price_mode === "fixed_pct" ? "固定報酬（自動計算）" : d.price_mode === "ai_negotiated" ? "AI 交渉・時給制" : "";
+          if (pvDays)  pvDays.textContent  = d.delivery_days ? d.delivery_days + " 日" : "—";
+          if (pvMsg)   pvMsg.value         = d.text || "";
+          if (pvResults) pvResults.hidden = false;
+          if (pvCopy) pvCopy.disabled = !(d.text && d.text.trim());
+          if (pvStatus) pvStatus.textContent = "Done.";
+        } catch (e) {
+          if (pvError) { pvError.textContent = String(e); pvError.hidden = false; }
+          if (pvStatus) pvStatus.textContent = "";
+        } finally {
+          pvRun.disabled = false;
+        }
+      });
+
+      if (pvCopy) pvCopy.addEventListener("click", function () {
+        const t = pvMsg && pvMsg.value;
+        if (!t) return;
+        navigator.clipboard.writeText(t).then(function () {
+          if (pvStatus) pvStatus.textContent = "Copied.";
+        });
+      });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && pvModal && pvModal.classList.contains("is-open")) pvClose_();
+      });
+    })();
   })();
   </script>
 {% endblock %}
