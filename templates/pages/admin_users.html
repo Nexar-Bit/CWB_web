@@ -72,6 +72,10 @@
                     <button type="submit" class="btn btn--danger" style="font-size:.8rem;padding:4px 10px">Reject</button>
                   </form>
                   {% endif %}
+                  <form method="post" action="/admin/users/{{ u.id }}/delete" style="display:inline;margin-left:6px"
+                        onsubmit="return confirm('Permanently delete {{ u.email }}? All their data will be removed and cannot be recovered.')">
+                    <button type="submit" class="btn btn--danger" style="font-size:.8rem;padding:4px 10px">Delete</button>
+                  </form>
                 {% else %}
                   <span class="muted" style="font-size:.8em">—</span>
                 {% endif %}

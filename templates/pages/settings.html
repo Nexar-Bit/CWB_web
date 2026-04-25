@@ -60,6 +60,28 @@
       <p class="toolbar"><button type="submit" class="btn btn--primary">Save Settings</button></p>
     </form>
 
+    {% if not is_admin %}
+    <div class="card" style="padding:16px;border-color:#fca5a5">
+      <h2 class="card__title" style="border:none;padding-top:0;color:#991b1b">Danger Zone</h2>
+      <p style="font-size:.85rem;color:var(--text3);margin:0 0 12px">
+        Permanently delete your account and all associated data (accounts, bids, logs, settings).
+        This action cannot be undone.
+      </p>
+      <form method="post" action="/account/delete"
+            onsubmit="return confirm('Delete your account permanently? This cannot be undone.')">
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div class="field" style="margin:0">
+            <label class="field__label" for="del-pw" style="color:#991b1b">Confirm with your password</label>
+            <input class="input" id="del-pw" name="password" type="password"
+              required placeholder="••••••••" autocomplete="current-password"
+              style="max-width:22rem" />
+          </div>
+          <button type="submit" class="btn btn--danger">Delete My Account</button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+
     <div class="card" style="padding:0">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border)">
         <h2 class="page__hdr-title" style="margin:0;border:none; padding:0; font-size:0.8rem">Prompt Library</h2>

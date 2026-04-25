@@ -317,6 +317,7 @@ def page_login(
     request: Request,
     nxt: str = Query("/", alias="next", max_length=2500),
     error: str = "",
+    message: str = "",
 ) -> object:
     if getattr(request.state, "user_id", None) is not None:
         return RedirectResponse(_safe_next(nxt), status_code=302)
@@ -328,6 +329,7 @@ def page_login(
             "page_title": "Sign in",
             "next_url": _safe_next(nxt),
             "error": (error or "").strip(),
+            "message": (message or "").strip(),
             "web_token_help": bool(WEB_TOKEN),
         },
     )
@@ -481,6 +483,47 @@ def admin_reject_user(request: Request, uid: int) -> object:
         return RedirectResponse("/dashboard", status_code=302)
     db.set_user_role(uid, "rejected")
     return RedirectResponse("/admin/users?message=User+rejected.", status_code=303)
+
+
+@app.post("/admin/users/{uid}/delete", response_class=HTMLResponse)
+def admin_delete_user(request: Request, uid: int) -> object:
+    if not _is_admin(request):
+        return RedirectResponse("/dashboard", status_code=302)
+    target = db.user_by_id(uid)
+    if not target:
+        return RedirectResponse("/admin/users?message=User+not+found.", status_code=303)
+    if (target.get("email") or "").lower() == db.ADMIN_EMAIL.lower():
+        return RedirectResponse(
+            "/admin/users?message=The+built-in+admin+account+cannot+be+deleted.",
+            status_code=303,
+        )
+    db.delete_user(uid)
+    return RedirectResponse("/admin/users?message=Account+deleted.", status_code=303)
+
+
+@app.post("/account/delete", response_class=HTMLResponse)
+def account_delete_self(
+    request: Request,
+    password: str = Form(""),
+) -> object:
+    uid = _u(request)
+    user = db.user_by_id(uid)
+    if not user:
+        request.session.clear()
+        return RedirectResponse("/login", status_code=303)
+    if (user.get("email") or "").lower() == db.ADMIN_EMAIL.lower():
+        return RedirectResponse(
+            "/settings?error=The+built-in+admin+account+cannot+be+deleted.",
+            status_code=303,
+        )
+    if not authx.verify_password(password or "", str(user.get("password_hash") or "")):
+        return RedirectResponse(
+            "/settings?error=Incorrect+password.+Account+not+deleted.",
+            status_code=303,
+        )
+    db.delete_user(uid)
+    request.session.clear()
+    return RedirectResponse("/login?message=Your+account+has+been+deleted.", status_code=303)
 
 
 # ── Page routes (desktop parity) ──────────────────────────────────────────────

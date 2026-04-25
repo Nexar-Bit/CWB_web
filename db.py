@@ -329,6 +329,22 @@ def set_user_role(user_id: int, role: str) -> None:
         )
 
 
+def delete_user(user_id: int) -> None:
+    """Delete a user and all their data atomically. The desktop account is protected."""
+    if user_id == DESKTOP_USER_ID:
+        return
+    with _conn() as con:
+        # Delete in FK-safe order; user_settings cascades automatically from the users row.
+        con.execute("DELETE FROM bids    WHERE user_id = %s", (user_id,))
+        con.execute("DELETE FROM logs    WHERE user_id = %s", (user_id,))
+        con.execute("DELETE FROM accounts WHERE user_id = %s", (user_id,))
+        con.execute("DELETE FROM prompts WHERE user_id = %s", (user_id,))
+        con.execute(
+            "DELETE FROM users WHERE id = %s AND id != %s",
+            (user_id, DESKTOP_USER_ID),
+        )
+
+
 def user_by_email(email: str) -> dict | None:
     e = (email or "").strip().lower()
     with _conn() as con:
